@@ -1,9 +1,9 @@
 {
-  "name": "meshpal",
+  "name": "moneymate-mesh",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "MeshPaL is the trust layer between AI agents and PayPal. A payment is not the outcome; a verified outcome is.",
+  "description": "MoneyMate Mesh \u2014 Your AI. Your Money. Your Rules. An AI financial agent with a MeshPaL trust and execution layer, built for the PayPal AI Hackathon.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
@@ -14,7 +14,7 @@
   "dependencies": {
     "ag-grid-community": "31.3.4",
     "ag-grid-react": "31.3.4",
-    "next": "15.5.6",
+    "next": "15.5.29",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },

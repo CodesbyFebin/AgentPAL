@@ -2,10 +2,11 @@ import fs from "fs";
 import path from "path";
 import { generateEd25519Pem } from "./crypto";
 import { SEED_MERCHANTS } from "./catalog";
+import { seedFinance } from "./finance-seed";
 import type { StoreData } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
-const DATA_FILE = path.join(DATA_DIR, "meshpal.json");
+const DATA_FILE = path.join(DATA_DIR, "moneymate.json");
 
 function emptyStore(): StoreData {
   return {
@@ -20,6 +21,13 @@ function emptyStore(): StoreData {
     merchants: structuredClone(SEED_MERCHANTS),
     contracts: [],
     evidence: [],
+    finance: seedFinance(),
+    idempotency: [],
+    webhook_receipts: [],
+    subscriptions: [],
+    renewal_reviews: [],
+    reservations: [],
+    ai_calls: [],
     settings: {
       kill_switch: false,
       signing: generateEd25519Pem(),
@@ -34,7 +42,25 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+function hydrateStore(store: StoreData) {
+  if (!store.finance) store.finance = seedFinance();
+  store.idempotency ??= [];
+  store.webhook_receipts ??= [];
+  store.subscriptions ??= [];
+  store.renewal_reviews ??= [];
+  store.reservations ??= [];
+  store.ai_calls ??= [];
+  for (const m of store.mandates) {
+    m.per_tx_limit ??= m.auto_approve_limit;
+    m.approval_threshold ??= m.per_tx_limit;
+    m.allow_recurring ??= false;
+    m.minimum_balance ??= 0;
+    m.currency ??= "USD";
+  }
+}
+
 export function readStore(): StoreData {
+
   if (memory) return memory;
   ensureDir();
   if (!fs.existsSync(DATA_FILE)) {
@@ -45,6 +71,7 @@ export function readStore(): StoreData {
   try {
     const raw = fs.readFileSync(DATA_FILE, "utf8");
     memory = JSON.parse(raw) as StoreData;
+    hydrateStore(memory);
     return memory;
   } catch {
     memory = emptyStore();

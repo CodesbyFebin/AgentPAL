@@ -31,15 +31,17 @@ async function accessToken(): Promise<string> {
   return data.access_token;
 }
 
-async function paypalFetch(path: string, init: RequestInit = {}) {
+async function paypalFetch(path: string, init: RequestInit & { requestId?: string } = {}) {
   const token = await accessToken();
+  const { requestId, ...rest } = init;
   const res = await fetch(`${apiBase()}${path}`, {
-    ...init,
+    ...rest,
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
       Prefer: "return=representation",
-      ...(init.headers || {}),
+      ...(requestId ? { "PayPal-Request-Id": requestId } : {}),
+      ...(rest.headers || {}),
     },
   });
   const text = await res.text();
@@ -68,6 +70,7 @@ export async function createAuthorizeOrder(opts: {
   customId: string;
   returnUrl: string;
   cancelUrl: string;
+  requestId?: string;
 }): Promise<CreatedOrder> {
   const mode = paypalMode();
   if (mode === "mock") {
@@ -95,7 +98,7 @@ export async function createAuthorizeOrder(opts: {
       paypal: {
         experience_context: {
           payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
-          brand_name: "MeshPaL",
+          brand_name: "MoneyMate AI",
           landing_page: "NO_PREFERENCE",
           user_action: "PAY_NOW",
           return_url: opts.returnUrl,
@@ -108,6 +111,7 @@ export async function createAuthorizeOrder(opts: {
   const data = (await paypalFetch("/v2/checkout/orders", {
     method: "POST",
     body: JSON.stringify(body),
+    requestId: opts.requestId || opts.customId,
   })) as { id: string; links?: Array<{ rel: string; href: string }> };
 
   const approve = data.links?.find((l) => l.rel === "approve" || l.rel === "payer-action");
@@ -175,4 +179,67 @@ export async function refundCapture(
   })) as { id: string };
   if (!data.id) throw new Error("PayPal refund response missing refund id");
   return { mode: "sandbox", refund_id: data.id };
+}
+
+export interface PayPalWebhookHeaders {
+  authAlgo: string;
+  certUrl: string;
+  transmissionId: string;
+  transmissionSig: string;
+  transmissionTime: string;
+}
+
+export function webhookHeadersFrom(req: Request): PayPalWebhookHeaders {
+  return {
+    authAlgo: req.headers.get("paypal-auth-algo") || "",
+    certUrl: req.headers.get("paypal-cert-url") || "",
+    transmissionId: req.headers.get("paypal-transmission-id") || "",
+    transmissionSig: req.headers.get("paypal-transmission-sig") || "",
+    transmissionTime: req.headers.get("paypal-transmission-time") || "",
+  };
+}
+
+export async function verifyWebhookSignature(
+  headers: PayPalWebhookHeaders,
+  webhookEvent: unknown,
+): Promise<{ ok: boolean; status: string; method: "paypal" | "skipped_mock" | "skipped_no_webhook_id" | "failed" }> {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+  const mode = paypalMode();
+  if (mode === "mock") {
+    return { ok: true, status: "SKIPPED_MOCK", method: "skipped_mock" };
+  }
+  if (!webhookId) {
+    return { ok: false, status: "NO_WEBHOOK_ID", method: "skipped_no_webhook_id" };
+  }
+  const data = (await paypalFetch("/v1/notifications/verify-webhook-signature", {
+    method: "POST",
+    body: JSON.stringify({
+      auth_algo: headers.authAlgo,
+      cert_url: headers.certUrl,
+      transmission_id: headers.transmissionId,
+      transmission_sig: headers.transmissionSig,
+      transmission_time: headers.transmissionTime,
+      webhook_id: webhookId,
+      webhook_event: webhookEvent,
+    }),
+  })) as { verification_status?: string };
+  const status = data.verification_status || "UNKNOWN";
+  const ok = status === "SUCCESS";
+  return { ok, status, method: ok ? "paypal" : "failed" };
+}
+
+
+export async function cancelSubscription(
+  subscriptionId: string,
+  reason: string,
+): Promise<{ mode: "sandbox" | "mock"; subscription_id: string; cancelled: true }> {
+  const mode = paypalMode();
+  if (mode === "mock") {
+    return { mode, subscription_id: subscriptionId, cancelled: true };
+  }
+  await paypalFetch(`/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason.slice(0, 128) }),
+  });
+  return { mode: "sandbox", subscription_id: subscriptionId, cancelled: true };
 }

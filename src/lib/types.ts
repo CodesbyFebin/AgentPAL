@@ -1,10 +1,10 @@
-export type Currency = "USD" | "USDC";
+export type Currency = "USD" | "USDC" | "INR";
 
 export type MandateStatus = "active" | "revoked" | "expired" | "completed";
 
 export type Rail = "x402_usdc" | "paypal_sandbox";
 
-export type PolicyDecisionType = "allow" | "block" | "needs-approval";
+export type PolicyDecisionType = "ALLOW" | "REQUIRE_APPROVAL" | "DENY";
 
 export type PaymentStatus =
   | "proposed"
@@ -33,15 +33,27 @@ export interface Goal {
 export interface Mandate {
   mandate_id: string;
   goal_id: string;
+  /** Human title shown in Mandates & Safety. */
+  title?: string;
   max_total_spend: number;
+  /** Synonym kept for existing receipts: same value as per_tx_limit. */
   auto_approve_limit: number;
+  /** Per-transaction limit. Amounts above this require approval. */
+  per_tx_limit: number;
+  /** Optional extra threshold; defaults to per_tx_limit. */
+  approval_threshold: number;
   approved_merchants: string[];
   allowed_categories: string[];
+  allow_recurring: boolean;
+  /** Floor the projected post-purchase balance must stay above, same currency as the mandate. */
+  minimum_balance: number;
+  currency: Currency;
   expires_at: string;
   status: MandateStatus;
   signed_at: string;
   public_key: string;
   signature: string;
+  revoked_at?: string;
 }
 
 export interface PlanStep {
@@ -137,6 +149,9 @@ export interface Payment {
   paypal?: PayPalRefs;
   x402?: { simulated: true; transfer_id: string };
   artifact?: DeliveryArtifact;
+  idempotency_key?: string;
+  finance_impact?: FinanceImpact;
+  impact_explanation?: string;
   created_at: string;
   updated_at: string;
 }
@@ -148,10 +163,14 @@ export interface PayPalRefs {
   capture_id?: string;
   refund_id?: string;
   approve_url?: string;
+  settlement_currency?: "USD";
+  settlement_amount?: number;
+  fx_rate?: number;
+  fx_label?: string;
 }
 
 export interface DeliveryArtifact {
-  kind: "api_credits" | "domain" | "generic";
+  kind: "api_credits" | "domain" | "generic" | "electronics";
   payload: Record<string, unknown>;
   delivered_at: string;
 }
@@ -227,6 +246,236 @@ export interface EvidenceDraft {
   created_at: string;
 }
 
+
+export type AffordabilityVerdict =
+  | "AFFORDABLE"
+  | "AFFORDABLE_WITH_TRADEOFFS"
+  | "NOT_RECOMMENDED";
+
+export interface BankAccount {
+  account_id: string;
+  name: string;
+  institution: string;
+  type: "salary" | "savings";
+  balance: number;
+  currency: "INR";
+  demo: true;
+}
+
+export interface LedgerTxn {
+  txn_id: string;
+  account_id: string;
+  posted_at: string;
+  amount: number;
+  currency: "INR";
+  category: string;
+  merchant: string;
+  note: string;
+  demo: boolean;
+  source: "seed" | "paypal_purchase";
+  payment_id?: string;
+}
+
+export interface MonthlyBudget {
+  budget_id: string;
+  category: string;
+  monthly_limit: number;
+  currency: "INR";
+  month: string;
+}
+
+export interface SavingsGoalAccount {
+  savings_goal_id: string;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  monthly_contribution: number;
+  currency: "INR";
+  deadline?: string;
+  priority: number;
+}
+
+export interface UpcomingBill {
+  bill_id: string;
+  name: string;
+  amount: number;
+  due_at: string;
+  category: string;
+  recurring: boolean;
+  currency: "INR";
+  paid?: boolean;
+}
+
+export interface FinanceFx {
+  paypal_currency: "USD";
+  inr_per_usd: number;
+  label: string;
+  source: "demo fixed rate";
+}
+
+export interface FinanceProfile {
+  user_id: string;
+  display_name: string;
+  as_of: string;
+  timezone: "Asia/Calcutta";
+  currency: "INR";
+  emergency_buffer: number;
+  next_income_at: string;
+  next_income_amount: number;
+  fx: FinanceFx;
+  demo: true;
+}
+
+export interface GoalContributionPause {
+  savings_goal_id: string;
+  name: string;
+  contribution_paused: number;
+  delayed_weeks: number;
+  detail: string;
+}
+
+export interface FinanceImpact {
+  verdict: AffordabilityVerdict;
+  amount: number;
+  currency: "INR";
+  available_to_spend: number;
+  safe_spending_limit: number;
+  contributions_paused: GoalContributionPause[];
+}
+
+export interface AffordabilityAlternative {
+  kind: "wait" | "cheaper" | "reduce_goals";
+  detail: string;
+  weeks?: number;
+  amount?: number;
+  sku?: string;
+}
+
+export interface AffordabilityResult {
+  as_of: string;
+  currency: "INR";
+  request_amount: number;
+  request_label?: string;
+  total_balances: number;
+  upcoming_bills_before_next_income: number;
+  emergency_buffer: number;
+  goal_contributions: number;
+  available_to_spend: number;
+  projected_eom_balance_without_purchase: number;
+  projected_eom_balance_with_purchase: number;
+  safe_spending_limit: number;
+  verdict: AffordabilityVerdict;
+  reasons: string[];
+  tradeoffs: string[];
+  alternatives: AffordabilityAlternative[];
+  goal_impacts: GoalContributionPause[];
+  fx: { inr: number; usd: number; rate: number; label: string };
+}
+
+export interface FinanceState {
+  profile: FinanceProfile;
+  accounts: BankAccount[];
+  transactions: LedgerTxn[];
+  budgets: MonthlyBudget[];
+  savings_goals: SavingsGoalAccount[];
+  bills: UpcomingBill[];
+}
+
+export interface IdempotencyRecord {
+  key: string;
+  payment_id: string;
+  created_at: string;
+}
+
+export interface WebhookReceipt {
+  event_id: string;
+  event_type: string;
+  payment_id?: string;
+  verified: boolean;
+  verification: "paypal" | "skipped_mock" | "skipped_no_webhook_id" | "failed";
+  processed_at: string;
+}
+
+export type RecurringLifecycle = "suggested" | "active" | "paused" | "ended";
+export type BillType = "bill" | "subscription" | "installment" | "income";
+export type PriceChangeSource = "detected" | "user";
+
+export interface PriceChange {
+  change_id: string;
+  previous: number;
+  next: number;
+  effective_at: string;
+  source: PriceChangeSource;
+  material: boolean;
+}
+
+export type SubscriptionStatus = RecurringLifecycle | "pending_renewal" | "past_due";
+
+export interface ManagedSubscription {
+  subscription_id: string;
+  merchant_id: string;
+  merchant_name: string;
+  plan_name: string;
+  amount: number;
+  currency: Currency;
+  interval: "monthly";
+  /** suggested = detected or agent-spawned and not yet confirmed by the user. */
+  status: SubscriptionStatus;
+  lifecycle: RecurringLifecycle;
+  bill_type: BillType;
+  expected_amount_min: number;
+  expected_amount_max: number;
+  price_history: PriceChange[];
+  paypal_subscription_id?: string;
+  mandate_id?: string;
+  /** Honest scope: only subscriptions created through MoneyMate Mesh are managed. */
+  created_via: "moneymate_mesh";
+  next_billing_at: string;
+  last_renewal_amount?: number;
+  notes?: string;
+  created_at: string;
+  cancelled_at?: string;
+  cancel_reason?: string;
+}
+
+export interface RenewalReview {
+  review_id: string;
+  subscription_id: string;
+  proposed_amount: number;
+  previous_amount: number;
+  price_increased: boolean;
+  decision: PolicyDecisionType;
+  reason: string;
+  approval_id?: string;
+  created_at: string;
+}
+
+export interface SpendReservation {
+  reservation_id: string;
+  mandate_id: string;
+  intent_key: string;
+  payment_id?: string;
+  amount: number;
+  currency: Currency;
+  status: "reserved" | "released" | "captured";
+  created_at: string;
+}
+
+export interface AiCallLog {
+  call_id: string;
+  kind: "llm" | "tool";
+  name: string;
+  model?: string;
+  at: string;
+  latency_ms: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  input_summary: string;
+  output_summary: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface Settings {
   kill_switch: boolean;
   kill_switch_at?: string;
@@ -245,5 +494,12 @@ export interface StoreData {
   merchants: Merchant[];
   contracts: OutcomeContract[];
   evidence: EvidenceDraft[];
+  finance: FinanceState;
+  idempotency: IdempotencyRecord[];
+  webhook_receipts: WebhookReceipt[];
+  subscriptions: ManagedSubscription[];
+  renewal_reviews: RenewalReview[];
+  reservations: SpendReservation[];
+  ai_calls: AiCallLog[];
   settings: Settings;
 }

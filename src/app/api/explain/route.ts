@@ -19,9 +19,9 @@ export async function POST(req: Request) {
       if (!last) return "No policy or payment events were recorded for that payment yet.";
       return explainEvent(last.message, last.type, last.payload);
     }
-    const blocked = [...store.events].reverse().find((e) => e.type === "policy.decision" && e.payload.decision === "block");
+    const blocked = [...store.events].reverse().find((e) => e.type === "policy.decision" && (e.payload.decision === "DENY" || e.payload.decision === "block"));
     if (blocked) return explainEvent(blocked.message, blocked.type, blocked.payload);
-    const needs = [...store.events].reverse().find((e) => e.type === "policy.decision" && e.payload.decision === "needs-approval");
+    const needs = [...store.events].reverse().find((e) => e.type === "policy.decision" && (e.payload.decision === "REQUIRE_APPROVAL" || e.payload.decision === "needs-approval"));
     if (needs) {
       return `Nothing was blocked in the latest run, but a purchase needed approval. ${explainEvent(needs.message, needs.type, needs.payload)}`;
     }
@@ -41,11 +41,11 @@ function explainEvent(message: string, type: string, payload: Record<string, unk
   if (type === "policy.decision") {
     const checks = (payload.checks as Array<{ code: string; passed: boolean; detail: string }> | undefined) ?? [];
     const failed = checks.filter((c) => !c.passed);
-    const header = String(payload.decision === "block" ? "This purchase was blocked." : payload.decision === "needs-approval" ? "This purchase is waiting for you." : "This purchase was allowed.");
+    const header = String(payload.decision === "DENY" || payload.decision === "block" ? "This purchase was blocked." : payload.decision === "REQUIRE_APPROVAL" || payload.decision === "needs-approval" ? "This purchase is waiting for you." : "This purchase was allowed.");
     const details = failed.length
       ? failed.map((c) => c.detail).join(" ")
       : String(payload.reason ?? message);
-    return `${header} ${details} MeshPaL decided this with deterministic policy checks, not model judgment. Merchant listing text is treated as data, never as instructions.`;
+    return `${header} ${details} MoneyMate Mesh decided this with deterministic MeshPaL policy checks, not model judgment. Merchant listing text is treated as data, never as instructions.`;
   }
   return message;
 }

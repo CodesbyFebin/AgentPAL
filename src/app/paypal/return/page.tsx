@@ -38,11 +38,11 @@ function ReturnInner() {
 
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
-      <p className="text-xs uppercase tracking-[0.2em] text-mesh-400">MeshPaL · PayPal return</p>
+      <p className="text-xs uppercase tracking-[0.2em] text-mesh-400">MoneyMate Mesh · checkout return</p>
       <h1 className="mt-3 font-display text-3xl text-white">Buyer approval received</h1>
       <p className="mt-4 text-zinc-300">{error ?? status}</p>
       <a href="/" className="mt-8 inline-block text-mesh-400 underline-offset-4 hover:underline">
-        Back to Control Tower
+        Back to MoneyMate Mesh
       </a>
     </main>
   );

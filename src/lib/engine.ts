@@ -1,4 +1,8 @@
-import { DEMO_GOAL_TEXT, SEED_MERCHANTS, X402_MAX_USD } from "./catalog";
+import { DEMO_GOAL_TEXT, SEED_MERCHANTS } from "./catalog";
+import { applyCapturedPurchase } from "./finance-apply";
+import { assessFromFinance } from "./finance-engine";
+import { findOpenIntent, intentKey, releaseReservation, reserveSpend } from "./reservations";
+import { formatMoney, fxBreakdown, inrToUsd } from "./money";
 import { signPayload } from "./crypto";
 import { draftEvidence } from "./evidence";
 import { appendEvent } from "./events";
@@ -36,22 +40,35 @@ export function createSignedMandate(
   store: StoreData,
   input: {
     goal_id: string;
+    title?: string;
     max_total_spend: number;
-    auto_approve_limit: number;
+    auto_approve_limit?: number;
+    per_tx_limit?: number;
+    approval_threshold?: number;
     approved_merchants: string[];
     allowed_categories: string[];
+    allow_recurring?: boolean;
+    minimum_balance?: number;
+    currency?: Mandate["currency"];
     expires_at?: string;
   },
 ): Mandate {
   const expires_at =
     input.expires_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  const per_tx_limit = input.per_tx_limit ?? input.auto_approve_limit ?? 10;
   const unsigned: Omit<Mandate, "signature"> = {
     mandate_id: id("mand"),
     goal_id: input.goal_id,
+    title: input.title,
     max_total_spend: input.max_total_spend,
-    auto_approve_limit: input.auto_approve_limit,
+    auto_approve_limit: per_tx_limit,
+    per_tx_limit,
+    approval_threshold: input.approval_threshold ?? per_tx_limit,
     approved_merchants: input.approved_merchants,
     allowed_categories: input.allowed_categories,
+    allow_recurring: Boolean(input.allow_recurring),
+    minimum_balance: input.minimum_balance ?? 0,
+    currency: input.currency ?? "USD",
     expires_at,
     status: "active",
     signed_at: nowIso(),
@@ -63,8 +80,21 @@ export function createSignedMandate(
   appendEvent(store, "mandate.signed", `Ed25519-signed mandate ${mandate.mandate_id} created`, {
     goal_id: mandate.goal_id,
     mandate_id: mandate.mandate_id,
+    title: mandate.title,
     max_total_spend: mandate.max_total_spend,
-    auto_approve_limit: mandate.auto_approve_limit,
+    per_tx_limit: mandate.per_tx_limit,
+  });
+  return mandate;
+}
+
+export function revokeMandate(store: StoreData, mandateId: string): Mandate {
+  const mandate = store.mandates.find((m) => m.mandate_id === mandateId);
+  if (!mandate) throw new Error("Mandate not found");
+  mandate.status = "revoked";
+  mandate.revoked_at = nowIso();
+  appendEvent(store, "mandate.revoked", `Mandate ${mandate.mandate_id} revoked`, {
+    goal_id: mandate.goal_id,
+    mandate_id: mandate.mandate_id,
   });
   return mandate;
 }
@@ -81,26 +111,29 @@ export function policyForStep(
       step_id: step.step_id,
       merchant_id: step.merchant_id,
       amount: step.amount,
-      decision: "block",
+      decision: "DENY",
       reason: `Unknown merchant ${step.merchant_id}.`,
       checks: [{ code: "merchant", passed: false, detail: "Merchant not in catalog." }],
       created_at: nowIso(),
     };
   }
-  const firstTime = !store.payments.some(
-    (p) =>
-      p.merchant_id === step.merchant_id &&
-      ["captured", "settled", "authorized"].includes(p.status),
-  );
+  const mandateSpend = mandate.max_total_spend - remainingBudget(store, mandate.mandate_id);
+  let projectedBalance: number | undefined;
+  if (mandate.currency === "INR" && store.finance) {
+    const assessment = assessFromFinance(store.finance, 0);
+    projectedBalance = assessment.projected_eom_balance_without_purchase;
+  }
   const decision = evaluatePolicy({
     mandate,
     merchant,
     amount: step.amount,
+    currency: step.currency,
     category: step.category,
     recurring: step.recurring,
+    mandateSpend,
+    projectedBalance,
     remainingBudget: remainingBudget(store, mandate.mandate_id),
     killSwitch: store.settings.kill_switch,
-    firstTimeMerchant: firstTime,
   });
   decision.step_id = step.step_id;
   return decision;
@@ -160,18 +193,48 @@ export async function executeStep(
     },
   );
 
-  if (decision.decision === "block") {
+  if (decision.decision === "DENY") {
     return { decision };
   }
 
-  if (decision.decision === "needs-approval" && !opts.afterHumanApproval) {
+  const key = intentKey({
+    mandate_id: plan.mandate_id,
+    merchant_id: step.merchant_id,
+    sku: step.product_sku,
+    amount: step.amount,
+    currency: step.currency,
+  });
+  if (!opts.afterHumanApproval) {
+    const existing = findOpenIntent(store, key);
+    if (existing.payment) {
+      appendEvent(store, "payment.deduped", `Duplicate intent ${key} reused payment ${existing.payment.payment_id}`, {
+        goal_id: plan.goal_id,
+        payment_id: existing.payment.payment_id,
+        intent_key: key,
+      });
+      return { payment: existing.payment, decision, approval: store.approvals.find((a) => a.payment_id === existing.payment!.payment_id && a.status === "pending") };
+    }
+  }
+
+  if (decision.decision === "REQUIRE_APPROVAL" && !opts.afterHumanApproval) {
     const payment = newPayment({
       plan,
       step,
       status: "awaiting_approval",
       approval: "human",
     });
+    payment.idempotency_key = key;
     store.payments.push(payment);
+    const reserved = reserveSpend(store, {
+      mandate_id: plan.mandate_id,
+      intent_key: key,
+      amount: step.amount,
+      currency: step.currency,
+      payment_id: payment.payment_id,
+    });
+    if (reserved.deduped) {
+      /* reservation already existed */
+    }
     const approval: Approval = {
       approval_id: id("appr"),
       payment_id: payment.payment_id,
@@ -188,7 +251,7 @@ export async function executeStep(
     appendEvent(
       store,
       "approval.requested",
-      `Human approval requested for ${step.merchant_name} ($${step.amount.toFixed(2)})`,
+      `Human approval requested for ${step.merchant_name} (${formatMoney(step.amount, step.currency)})`,
       {
         goal_id: plan.goal_id,
         payment_id: payment.payment_id,
@@ -207,8 +270,18 @@ export async function executeStep(
       approval: opts.afterHumanApproval ? "human" : "auto",
     });
   if (!store.payments.includes(payment)) store.payments.push(payment);
+  payment.idempotency_key = payment.idempotency_key || key;
+  if (!store.reservations.some((r) => r.payment_id === payment.payment_id && r.status === "reserved")) {
+    reserveSpend(store, {
+      mandate_id: plan.mandate_id,
+      intent_key: key,
+      amount: step.amount,
+      currency: step.currency,
+      payment_id: payment.payment_id,
+    });
+  }
 
-  if (step.rail === "x402_usdc" || step.amount < X402_MAX_USD) {
+  if (step.rail === "x402_usdc") {
     const x402 = settleSimulatedX402(step.amount);
     payment.rail = "x402_usdc";
     payment.x402 = { simulated: true, transfer_id: x402.transfer_id };
@@ -230,10 +303,15 @@ export async function executeStep(
     return { payment, decision };
   }
 
+  const settlementCurrency = step.currency === "INR" ? "USD" : (step.currency === "USDC" ? "USD" : step.currency);
+  const settlementAmount = step.currency === "INR" ? inrToUsd(step.amount) : step.amount;
+  const fx = step.currency === "INR" ? fxBreakdown(step.amount) : undefined;
   const order = await createAuthorizeOrder({
-    amount: step.amount,
+    amount: settlementAmount,
+    currency: settlementCurrency,
     description: `${step.action} at ${step.merchant_name} (agent on behalf of user)`,
     customId: payment.payment_id,
+    requestId: payment.idempotency_key || payment.payment_id,
     returnUrl: `${appUrl()}/paypal/return?payment_id=${encodeURIComponent(payment.payment_id)}`,
     cancelUrl: `${appUrl()}/paypal/cancel?payment_id=${encodeURIComponent(payment.payment_id)}`,
   });
@@ -242,13 +320,17 @@ export async function executeStep(
     mode: order.mode,
     order_id: order.order_id,
     approve_url: order.approve_url,
+    settlement_currency: "USD",
+    settlement_amount: settlementAmount,
+    fx_rate: fx?.rate,
+    fx_label: fx?.label,
   };
   payment.status = "awaiting_buyer";
   payment.updated_at = nowIso();
   appendEvent(
     store,
     "payment.paypal.order_created",
-    `PayPal ${order.mode} order ${order.order_id} created with intent=AUTHORIZE for $${step.amount.toFixed(2)}`,
+    `PayPal ${order.mode} order ${order.order_id} created with intent=AUTHORIZE for ${formatMoney(step.amount, step.currency)}${fx ? ` (settled as ${formatMoney(settlementAmount, "USD")} at the labeled demo FX rate)` : ""}`,
     {
       goal_id: plan.goal_id,
       payment_id: payment.payment_id,
@@ -341,6 +423,7 @@ export async function completePaypalAfterBuyer(store: StoreData, paymentId: stri
         mode: cap.mode,
       },
     );
+    applyCapturedPurchase(store, payment);
   } else {
     await voidAuthorization(auth.authorization_id);
     payment.status = "voided";
@@ -381,7 +464,7 @@ export async function refundPayment(store: StoreData, paymentId: string) {
     return payment;
   }
   if (!payment.paypal?.capture_id) throw new Error("No capture to refund");
-  const ref = await refundCapture(payment.paypal.capture_id, payment.amount, "USD");
+  const ref = await refundCapture(payment.paypal.capture_id, payment.paypal.settlement_amount ?? (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount), payment.paypal.settlement_currency || "USD");
   payment.paypal.refund_id = ref.refund_id;
   payment.status = "refunded";
   payment.updated_at = nowIso();
@@ -509,7 +592,19 @@ export function snapshot() {
             auto_approve_limit: mandate.auto_approve_limit,
           }
         : null,
-      modes: { planner: plannerMode(), paypal: paypalMode(), paypalClientId: process.env.PAYPAL_CLIENT_ID || null },
+      finance: store.finance,
+      idempotency: store.idempotency,
+      webhook_receipts: store.webhook_receipts,
+      subscriptions: store.subscriptions,
+      renewal_reviews: store.renewal_reviews,
+      reservations: store.reservations,
+      ai_calls: store.ai_calls,
+      modes: {
+        planner: plannerMode(),
+        paypal: paypalMode(),
+        paypalClientId: process.env.PAYPAL_CLIENT_ID || null,
+        webhook: process.env.PAYPAL_WEBHOOK_ID ? "configured" : "unset",
+      },
     };
   });
 }

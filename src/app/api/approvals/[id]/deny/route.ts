@@ -1,6 +1,7 @@
 import { appendEvent } from "@/lib/events";
 import { fail, ok } from "@/lib/http";
 import { nowIso } from "@/lib/ids";
+import { releaseReservation } from "@/lib/reservations";
 import { updateStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       if (payment) {
         payment.status = "denied";
         payment.updated_at = nowIso();
+        releaseReservation(store, payment.payment_id);
       }
       appendEvent(store, "approval.denied", `Human denied ${approval.merchant_name}`, {
         goal_id: approval.goal_id,

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: meshpal
+    name: moneymate-mesh
     runtime: node
     plan: starter
     buildCommand: npm install && npm run build
@@ -20,5 +20,7 @@ services:
         sync: false
       - key: PAYPAL_ENV
         value: sandbox
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
       - key: APP_URL
         sync: false

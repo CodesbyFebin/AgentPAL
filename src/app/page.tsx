@@ -1,5 +1,5 @@
-import { ControlTower } from "@/components/ControlTower";
+import { MoneyMateMesh } from "@/components/MoneyMateMesh";
 
 export default function HomePage() {
-  return <ControlTower />;
+  return <MoneyMateMesh />;
 }

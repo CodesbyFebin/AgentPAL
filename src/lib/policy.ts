@@ -1,4 +1,5 @@
 import { id, nowIso } from "./ids";
+import { formatMoney } from "./money";
 import type {
   Mandate,
   Merchant,
@@ -9,12 +10,14 @@ import type {
 
 export const INJECTION_PATTERNS: RegExp[] = [
   /ignore\s+(all\s+)?(previous\s+)?(instructions|limits|rules)/i,
+  /ignore\s+spending\s+limits/i,
   /system\s+override/i,
   /disregard\s+(the\s+)?(user'?s\s+)?mandate/i,
   /you\s+are\s+now\s+in\s+unrestricted/i,
   /auto-approve\s+this\s+purchase/i,
   /treat\s+this\s+listing\s+as\s+an\s+instruction/i,
   /bypass\s+(the\s+)?(policy|budget|limit)/i,
+  /pay\s+immediately/i,
 ];
 
 export function detectPromptInjection(texts: string[]): {
@@ -36,33 +39,69 @@ export interface PolicyInput {
   mandate: Mandate;
   merchant: Merchant;
   amount: number;
+  currency?: string;
   category: string;
   recurring: boolean;
-  remainingBudget: number;
+  /** Amount already reserved or captured against this mandate (does not include this request). */
+  mandateSpend: number;
+  /** Projected account/cash balance after ordinary bills, in the mandate currency. */
+  projectedBalance?: number;
   killSwitch: boolean;
-  firstTimeMerchant: boolean;
   now?: Date;
+  /** @deprecated accepted for older call sites; ignored by the rule order. */
+  remainingBudget?: number;
+  firstTimeMerchant?: boolean;
 }
 
+function perTxLimit(mandate: Mandate): number {
+  return mandate.per_tx_limit ?? mandate.auto_approve_limit;
+}
+
+function approvalThreshold(mandate: Mandate): number {
+  return mandate.approval_threshold ?? perTxLimit(mandate);
+}
+
+/**
+ * Deterministic MeshPaL policy. Decision order:
+ * 1. kill switch / revoked / expired / merchant not allowed / category not allowed / amount<=0 / injection => DENY
+ * 2. currency mismatch / recurring without permission / amount > per-tx (or approval) limit => REQUIRE_APPROVAL
+ * 3. mandateSpend+amount > totalLimit => DENY
+ * 4. projectedBalance-amount < minimumBalance => REQUIRE_APPROVAL
+ * 5. else ALLOW
+ *
+ * DENY always wins over a earlier REQUIRE_APPROVAL.
+ */
 export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   const now = input.now ?? new Date();
   const checks: PolicyCheck[] = [];
   const reasons: string[] = [];
-  let decision: PolicyDecisionType = "allow";
+  let decision: PolicyDecisionType = "ALLOW";
 
-  const fail = (code: string, detail: string, next: PolicyDecisionType = "block") => {
+  const deny = (code: string, detail: string) => {
     checks.push({ code, passed: false, detail });
     reasons.push(detail);
-    if (next === "block") decision = "block";
-    else if (decision !== "block") decision = "needs-approval";
+    decision = "DENY";
+  };
+
+  const needApproval = (code: string, detail: string) => {
+    checks.push({ code, passed: false, detail });
+    reasons.push(detail);
+    if (decision !== "DENY") decision = "REQUIRE_APPROVAL";
   };
 
   const pass = (code: string, detail: string) => {
     checks.push({ code, passed: true, detail });
   };
 
+  const ccy = input.currency || input.mandate.currency || "USD";
+  const amt = formatMoney(input.amount, ccy);
+  const totalLimit = formatMoney(input.mandate.max_total_spend, input.mandate.currency || ccy);
+  const txLimit = formatMoney(perTxLimit(input.mandate), input.mandate.currency || ccy);
+  const threshold = formatMoney(approvalThreshold(input.mandate), input.mandate.currency || ccy);
+
+  // --- 1. hard DENY ---
   if (input.killSwitch) {
-    fail(
+    deny(
       "kill_switch",
       "Kill switch is on. All agent financial activity is frozen until a human turns it off.",
     );
@@ -71,44 +110,43 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   }
 
   if (input.mandate.status !== "active") {
-    fail("mandate_status", `Mandate status is "${input.mandate.status}", not active.`);
+    deny("mandate_status", `Mandate status is "${input.mandate.status}", not active.`);
   } else {
     pass("mandate_status", "Mandate is active.");
   }
 
   const expires = new Date(input.mandate.expires_at);
   if (Number.isFinite(expires.getTime()) && expires.getTime() <= now.getTime()) {
-    fail("expiry", `Mandate expired at ${input.mandate.expires_at}.`);
+    deny("expiry", `Mandate expired at ${input.mandate.expires_at}.`);
   } else {
     pass("expiry", `Mandate is valid until ${input.mandate.expires_at}.`);
   }
 
-  // Merchant catalog text is data, never instructions.
   const injection = detectPromptInjection([
     input.merchant.name,
     input.merchant.description,
     ...input.merchant.products.map((p) => `${p.name} ${p.sku}`),
   ]);
   if (injection.detected || input.merchant.injection_bait) {
-    fail(
+    deny(
       "prompt_injection",
-      `Blocked a prompt-injection attempt in merchant listing text (matched “${injection.excerpt || "injection bait flag"}”). Catalog copy is treated as untrusted data, not policy instructions.`,
+      `DENY: merchant listing text is untrusted data and matched “${injection.excerpt || "injection bait flag"}”. No PayPal call is made.`,
     );
   } else {
     pass("prompt_injection", "No injection patterns in merchant listing data.");
   }
 
   if (!input.mandate.approved_merchants.includes(input.merchant.merchant_id)) {
-    fail(
+    deny(
       "allowlist",
-      `${input.merchant.name} is not on the mandate allowlist (${input.mandate.approved_merchants.join(", ") || "empty"}).`,
+      `${input.merchant.name} is not on the mandate merchant allowlist (${input.mandate.approved_merchants.join(", ") || "empty"}).`,
     );
   } else {
     pass("allowlist", `${input.merchant.name} is an approved provider on this mandate.`);
   }
 
   if (!input.mandate.allowed_categories.includes(input.category)) {
-    fail(
+    deny(
       "category",
       `Category "${input.category}" is not allowed. Allowed: ${input.mandate.allowed_categories.join(", ") || "none"}.`,
     );
@@ -117,60 +155,78 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   }
 
   if (input.amount <= 0) {
-    fail("amount", "Purchase amount must be greater than zero.");
-  } else if (input.amount > input.remainingBudget + 1e-9) {
-    fail(
-      "budget",
-      `$${input.amount.toFixed(2)} would exceed the remaining budget of $${input.remainingBudget.toFixed(2)} (max total $${input.mandate.max_total_spend.toFixed(2)}).`,
-    );
+    deny("amount", "Purchase amount must be greater than zero.");
   } else {
-    pass(
-      "budget",
-      `$${input.amount.toFixed(2)} fits in the remaining budget of $${input.remainingBudget.toFixed(2)}.`,
-    );
+    pass("amount", `${amt} is a positive amount.`);
   }
 
-  if (input.recurring) {
-    fail(
-      "recurring",
-      "This is a recurring charge. MeshPaL always asks a human before an agent can start a subscription.",
-      "needs-approval",
+  // --- 2. REQUIRE_APPROVAL ---
+  const mandateCcy = input.mandate.currency || "USD";
+  if (input.currency && input.currency !== mandateCcy) {
+    needApproval(
+      "currency",
+      `Currency mismatch: the request is ${input.currency} but the mandate is denominated in ${mandateCcy}. A human must approve.`,
     );
+  } else {
+    pass("currency", `Request currency ${ccy} matches the mandate.`);
+  }
+
+  if (input.recurring && !input.mandate.allow_recurring) {
+    needApproval(
+      "recurring",
+      "This is a recurring charge and the mandate does not allow recurring payments (allowRecurring is off). A human must approve.",
+    );
+  } else if (input.recurring) {
+    pass("recurring", "Recurring charges are permitted by this mandate.");
   } else {
     pass("recurring", "One-time purchase, not a subscription.");
   }
 
-  if (input.firstTimeMerchant && !input.mandate.approved_merchants.includes(input.merchant.merchant_id)) {
-    fail(
-      "first_time_merchant",
-      `${input.merchant.name} has never been paid on behalf of this user. First-time merchants require human approval.`,
-      "needs-approval",
-    );
-  } else if (input.firstTimeMerchant) {
-    pass(
-      "first_time_merchant",
-      `${input.merchant.name} is new in the ledger but already pre-approved on the mandate allowlist, so first-time status does not require an extra approval.`,
+  if (input.amount > perTxLimit(input.mandate) || input.amount > approvalThreshold(input.mandate)) {
+    needApproval(
+      "per_tx_limit",
+      `${amt} is over the per-transaction limit of ${txLimit} (approval threshold ${threshold}). A human must approve this purchase.`,
     );
   } else {
-    pass("first_time_merchant", `${input.merchant.name} already has a prior payment on this account.`);
+    pass("per_tx_limit", `${amt} is within the per-transaction limit of ${txLimit}.`);
   }
 
-  if (input.amount > input.mandate.auto_approve_limit) {
-    fail(
-      "auto_approve_limit",
-      `$${input.amount.toFixed(2)} is over the auto-approve limit of $${input.mandate.auto_approve_limit.toFixed(2)}. A human must approve this purchase.`,
-      "needs-approval",
+  // --- 3. DENY if total limit exceeded (wins over earlier REQUIRE_APPROVAL) ---
+  const nextSpend = input.mandateSpend + input.amount;
+  if (nextSpend > input.mandate.max_total_spend + 1e-9) {
+    deny(
+      "total_limit",
+      `${amt} plus existing mandate spend of ${formatMoney(input.mandateSpend, mandateCcy)} would exceed the total limit of ${totalLimit}.`,
     );
   } else {
     pass(
-      "auto_approve_limit",
-      `$${input.amount.toFixed(2)} is within the auto-approve limit of $${input.mandate.auto_approve_limit.toFixed(2)}.`,
+      "total_limit",
+      `Mandate spend ${formatMoney(input.mandateSpend, mandateCcy)} + ${amt} is within the total limit of ${totalLimit}.`,
     );
+  }
+
+  // --- 4. minimum balance ---
+  const minimum = input.mandate.minimum_balance ?? 0;
+  if (typeof input.projectedBalance === "number" && minimum > 0) {
+    const after = input.projectedBalance - input.amount;
+    if (after < minimum) {
+      needApproval(
+        "minimum_balance",
+        `Projected balance ${formatMoney(input.projectedBalance, ccy)} minus ${amt} is ${formatMoney(after, ccy)}, which is under the mandate minimum balance of ${formatMoney(minimum, ccy)}. A human must approve.`,
+      );
+    } else {
+      pass(
+        "minimum_balance",
+        `Projected post-purchase balance ${formatMoney(after, ccy)} stays at or above the minimum of ${formatMoney(minimum, ccy)}.`,
+      );
+    }
+  } else {
+    pass("minimum_balance", "No minimum-balance gate is configured on this mandate (or no projected balance was supplied).");
   }
 
   const reason =
-    decision === "allow"
-      ? `Allowed: ${input.merchant.name} for $${input.amount.toFixed(2)} is within budget, on the allowlist, and under the auto-approve limit.`
+    decision === "ALLOW"
+      ? `ALLOW: ${input.merchant.name} for ${amt} is within the total limit, on the allowlist, and under the per-transaction limit.`
       : reasons[0] + (reasons.length > 1 ? ` Additional checks: ${reasons.slice(1).join(" ")}` : "");
 
   return {
@@ -185,7 +241,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
 }
 
 export function decisionLabel(d: PolicyDecisionType): string {
-  if (d === "allow") return "Allow";
-  if (d === "block") return "Block";
-  return "Needs approval";
+  if (d === "ALLOW") return "Allow";
+  if (d === "DENY") return "Deny";
+  return "Require approval";
 }

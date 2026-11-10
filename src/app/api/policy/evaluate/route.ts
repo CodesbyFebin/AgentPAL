@@ -28,17 +28,17 @@ export async function POST(req: Request) {
       const merchant = store.merchants.find((m) => m.merchant_id === body.merchant_id);
       if (!mandate || !merchant) throw new Error("Mandate or merchant not found");
       const amount = Number(body.amount ?? merchant.products[0].amount);
+      const remaining = remainingBudget(store, mandate.mandate_id);
       return evaluatePolicy({
         mandate,
         merchant,
         amount,
+        currency: merchant.products[0]?.currency || mandate.currency,
         category: body.category || merchant.category,
         recurring: Boolean(body.recurring),
-        remainingBudget: remainingBudget(store, mandate.mandate_id),
+        mandateSpend: mandate.max_total_spend - remaining,
+        remainingBudget: remaining,
         killSwitch: store.settings.kill_switch,
-        firstTimeMerchant: !store.payments.some(
-          (p) => p.merchant_id === merchant.merchant_id && ["captured", "settled", "authorized"].includes(p.status),
-        ),
       });
     });
     return ok({ decision });

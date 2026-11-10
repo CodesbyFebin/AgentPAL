@@ -2,6 +2,7 @@ import { fail, ok } from "@/lib/http";
 import { captureAuthorization } from "@/lib/paypal";
 import { appendEvent } from "@/lib/events";
 import { nowIso } from "@/lib/ids";
+import { applyCapturedPurchase } from "@/lib/finance-apply";
 import { updateStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
         payment_id: payment.payment_id,
         capture_id: cap.capture_id,
       });
+      applyCapturedPurchase(store, payment);
       return payment;
     });
     return ok({ payment });

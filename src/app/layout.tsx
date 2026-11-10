@@ -15,9 +15,9 @@ const sourceSans = Source_Sans_3({
 });
 
 export const metadata: Metadata = {
-  title: "MeshPaL — Trust layer between AI agents and PayPal",
+  title: "MoneyMate Mesh — Your AI. Your Money. Your Rules.",
   description:
-    "MeshPaL lets people delegate purchases to AI agents under a signed mandate, with policy checks, PayPal authorize-then-capture, outcome verification, and a signed receipt. A payment is not the outcome; a verified outcome is.",
+    "MoneyMate Mesh is an AI financial agent plus a MeshPaL trust layer: deterministic affordability, signed mandates, policy checks, PayPal authorize-then-capture, and a hash-chained audit log. Not a PayPal product.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
