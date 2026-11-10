@@ -70,9 +70,14 @@ export interface ToolSpec {
 
 export interface ToolCall {
   id: string;
-  name: string;
-  arguments: string;
+  type: "function";
+  function: { name: string; arguments: string };
 }
+
+export type ToolChatMessage =
+  | ChatMessage
+  | { role: "assistant"; content: string | null; tool_calls: ToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
 
 export interface ChatToolsResult {
   text: string;
@@ -82,7 +87,7 @@ export interface ChatToolsResult {
 }
 
 export async function chatWithTools(
-  messages: ChatMessage[],
+  messages: ToolChatMessage[],
   tools: ToolSpec[],
 ): Promise<ChatToolsResult> {
   const base = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
@@ -115,8 +120,11 @@ export async function chatWithTools(
   const msg = data.choices?.[0]?.message;
   const toolCalls: ToolCall[] = (msg?.tool_calls ?? []).map((c) => ({
     id: c.id,
-    name: c.function?.name || "",
-    arguments: c.function?.arguments || "{}",
+    type: "function",
+    function: {
+      name: c.function?.name || "",
+      arguments: c.function?.arguments || "{}",
+    },
   }));
   return {
     text: msg?.content ?? "",

@@ -137,6 +137,32 @@ Open [http://localhost:3000](http://localhost:3000).
 | `AI_BASE_URL` | No (default `https://api.openai.com/v1`) | Must expose `/chat/completions` |
 | `AI_MODEL` | No (default `gpt-4o-mini`) | Model name |
 
+### Run the coach with Ollama
+
+For local development, start [Ollama](https://docs.ollama.com/api/openai-compatibility) and pull a model that supports tool calling.
+
+```bash
+ollama pull qwen3:4b
+```
+
+Set these values in `.env.local` and restart the Next.js server. MoneyMate uses `ollama` as a placeholder key for the local endpoint.
+
+```dotenv
+AI_BASE_URL=http://127.0.0.1:11434/v1
+AI_API_KEY=ollama
+AI_MODEL=qwen3:4b
+```
+
+To try a read-only tool through the existing coach endpoint, ask for demo account balances.
+
+```bash
+curl -fsS http://localhost:3000/api/coach/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"Use get_accounts to list my demo account balances."}'
+```
+
+For a hosted deployment, `AI_BASE_URL` must be reachable from the deployed Next.js server. If you use another OpenAI-compatible endpoint, choose a model that supports function calling and JSON mode.
+
 ### Deploy on Render
 
 This repo includes `render.yaml`. The build command is `npm ci && npm run build`, `NODE_ENV=production`, and the health check is `GET /api/health` (returns `{ ok, paypalMode: "sandbox"|"mock", aiMode: "live"|"offline" }` with no secrets). `npm start` binds to `next start -p ${PORT:-3000}`. Local `npm run dev` stays on port 3000.

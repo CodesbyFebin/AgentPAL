@@ -1,4 +1,4 @@
-import { chatWithTools } from "./ai";
+import { chatWithTools, type ToolChatMessage } from "./ai";
 import { COACH_TOOLS, runCoachTool } from "./ai-tools";
 import { logAiCall } from "./ai-log";
 import { explainAffordability, offlineCoachExplanation, parsePurchaseIntent } from "./coach";
@@ -36,7 +36,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
     return { ...basic, analysis: basic.analysis ?? analysis, tools_used: toolsUsed };
   }
 
-  const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string }> = [
+  const messages: ToolChatMessage[] = [
     {
       role: "system",
       content:
@@ -50,7 +50,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
   try {
     for (let hop = 0; hop < 4; hop++) {
       const started = Date.now();
-      const result = await chatWithTools(messages as never, COACH_TOOLS);
+      const result = await chatWithTools(messages, COACH_TOOLS);
       model = result.model;
       logAiCall(store, {
         kind: "llm",
@@ -60,7 +60,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
         prompt_tokens: result.usage?.prompt_tokens,
         completion_tokens: result.usage?.completion_tokens,
         input_summary: message.slice(0, 240),
-        output_summary: (result.text || result.toolCalls.map((c) => c.name).join(",")).slice(0, 400),
+        output_summary: (result.text || result.toolCalls.map((c) => c.function.name).join(",")).slice(0, 400),
         ok: true,
       });
       if (!result.toolCalls.length) {
@@ -69,22 +69,22 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
       }
       messages.push({
         role: "assistant",
-        content: result.text || "",
+        content: result.text || null,
+        tool_calls: result.toolCalls,
       });
-      // The API expects tool_calls on the assistant message; we also push tool results.
       for (const call of result.toolCalls) {
-        toolsUsed.push(call.name);
+        const { name, arguments: rawArgs } = call.function;
+        toolsUsed.push(name);
         let args: Record<string, unknown> = {};
         try {
-          args = JSON.parse(call.arguments || "{}") as Record<string, unknown>;
+          args = JSON.parse(rawArgs) as Record<string, unknown>;
         } catch {
           args = {};
         }
-        const out = await Promise.resolve(runCoachTool(store, call.name, args));
+        const out = runCoachTool(store, name, args);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          name: call.name,
           content: JSON.stringify(out),
         });
       }
