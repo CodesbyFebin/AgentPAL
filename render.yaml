@@ -2,7 +2,7 @@ services:
   - type: web
     name: moneymate-mesh
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
