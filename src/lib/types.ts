@@ -2,7 +2,7 @@ export type Currency = "USD" | "USDC" | "INR";
 
 export type MandateStatus = "active" | "revoked" | "expired" | "completed";
 
-export type Rail = "x402_usdc" | "paypal_sandbox";
+export type Rail = "x402_usdc" | "paypal_sandbox" | "braintree_sandbox";
 
 export type PolicyDecisionType = "ALLOW" | "REQUIRE_APPROVAL" | "DENY";
 
@@ -147,6 +147,7 @@ export interface Payment {
   status: PaymentStatus;
   approval: "auto" | "human" | "none";
   paypal?: PayPalRefs;
+  braintree?: BraintreeRefs;
   x402?: { simulated: true; transfer_id: string };
   artifact?: DeliveryArtifact;
   idempotency_key?: string;
@@ -163,6 +164,20 @@ export interface PayPalRefs {
   capture_id?: string;
   refund_id?: string;
   approve_url?: string;
+  settlement_currency?: "USD";
+  settlement_amount?: number;
+  fx_rate?: number;
+  fx_label?: string;
+}
+
+export interface BraintreeRefs {
+  mode: "sandbox" | "mock";
+  order_id?: string;
+  transaction_id?: string;
+  authorization_id?: string;
+  capture_id?: string;
+  refund_id?: string;
+  status?: string;
   settlement_currency?: "USD";
   settlement_amount?: number;
   fx_rate?: number;

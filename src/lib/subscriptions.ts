@@ -1,6 +1,7 @@
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
 import { formatMoney } from "./money";
+import { hasPayPalCreds } from "./payment-mode";
 import { cancelSubscription, getSubscription } from "./paypal";
 import { evaluatePolicy } from "./policy";
 import type { ManagedSubscription, Mandate, PriceChange, PriceChangeSource, RenewalReview, StoreData } from "./types";
@@ -253,6 +254,25 @@ export async function cancelManagedSubscription(store: StoreData, subscriptionId
     return { ...sub, paypal_verified_status: "CANCELLED", paypal_mode: "already_ended" as const };
   }
   const paypalId = sub.paypal_subscription_id || sub.subscription_id;
+  if (!hasPayPalCreds()) {
+    sub.status = "ended";
+    sub.lifecycle = "ended";
+    sub.cancelled_at = nowIso();
+    sub.cancel_reason = reason;
+    appendEvent(
+      store,
+      "subscription.cancelled",
+      `Cancelled ${sub.plan_name} with a labelled simulated cancel (Braintree subscription plans are not configured in this demo; the PayPal Subscriptions cancel API is used only when PayPal REST credentials are set): ${reason}`,
+      {
+        subscription_id: sub.subscription_id,
+        paypal_subscription_id: paypalId,
+        mode: "simulated",
+        reason,
+        verified_status: "CANCELLED",
+      },
+    );
+    return { ...sub, paypal_verified_status: "CANCELLED", paypal_mode: "simulated" as const };
+  }
   const result = await cancelSubscription(paypalId, reason);
   const verified = await getSubscription(paypalId);
   sub.status = "ended";

@@ -1,5 +1,5 @@
 import { fail, ok } from "@/lib/http";
-import { captureAuthorization } from "@/lib/paypal";
+import { captureReservedPayment } from "@/lib/payment-provider";
 import { appendEvent } from "@/lib/events";
 import { nowIso } from "@/lib/ids";
 import { applyCapturedPurchase } from "@/lib/finance-apply";
@@ -17,12 +17,18 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       if (!verification || verification.status !== "passed") {
         throw new Error("Capture is only allowed after outcome verification passes");
       }
-      if (!payment.paypal?.authorization_id) throw new Error("No authorization to capture");
-      const cap = await captureAuthorization(payment.paypal.authorization_id);
-      payment.paypal.capture_id = cap.capture_id;
+      const authorizationId = payment.braintree?.authorization_id || payment.paypal?.authorization_id;
+      if (!authorizationId) throw new Error("No authorization to capture");
+      const cap = await captureReservedPayment(authorizationId, payment.rail);
+      if (payment.rail === "braintree_sandbox" && payment.braintree) {
+        payment.braintree.capture_id = cap.capture_id;
+        payment.braintree.status = cap.status || "submitted_for_settlement";
+      } else if (payment.paypal) {
+        payment.paypal.capture_id = cap.capture_id;
+      }
       payment.status = "captured";
       payment.updated_at = nowIso();
-      appendEvent(store, "payment.paypal.captured", `PayPal capture ${cap.capture_id}`, {
+      appendEvent(store, payment.rail === "braintree_sandbox" ? "payment.braintree.captured" : "payment.paypal.captured", `Capture ${cap.capture_id}`, {
         goal_id: payment.goal_id,
         payment_id: payment.payment_id,
         capture_id: cap.capture_id,

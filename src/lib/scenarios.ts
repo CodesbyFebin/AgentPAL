@@ -11,6 +11,7 @@ import {
   seedDemoSubscriptions,
   seedSuggestedSubscription,
 } from "./subscriptions";
+import { checkoutRail, paymentMode } from "./payment-mode";
 import { paypalMode, plannerMode, resetStore, updateStore } from "./store";
 import type { Goal, Plan, PlanStep, StoreData } from "./types";
 
@@ -46,7 +47,7 @@ function paypalStep(store: StoreData, opts: {
     category: product.category,
     amount: product.amount,
     currency: product.currency,
-    rail: "paypal_sandbox",
+    rail: checkoutRail(),
     approval_required: product.amount > 10,
     rationale: opts.rationale,
     product_sku: product.sku,
@@ -54,7 +55,7 @@ function paypalStep(store: StoreData, opts: {
   };
 }
 
-/** Scenario A: $8 API credits auto-allowed, $12 domain needs approval, PayPal authorize-then-capture after verify. */
+/** Scenario A: $8 API credits auto-allowed, $12 domain needs approval, authorize-then-capture after verify. */
 export async function runBuySafelyScenario() {
   resetStore();
   return updateStore(async (store) => {
@@ -85,12 +86,12 @@ export async function runBuySafelyScenario() {
       paypalStep(store, {
         action: "purchase_api_credits",
         merchant_id: "merchant_001",
-        rationale: "DevTools AI is on the allowlist. $8 is under the $10 per-transaction limit, so MeshPaL can ALLOW it without a human, then create a PayPal order (authorize, verify, capture).",
+        rationale: "DevTools AI is on the allowlist. $8 is under the $10 per-transaction limit, so MeshPaL can ALLOW it without a human, then start a sandbox checkout (authorize, verify, capture).",
       }),
       paypalStep(store, {
         action: "register_domain",
         merchant_id: "merchant_002",
-        rationale: "The $12 domain is over the $10 per-transaction limit, so MeshPaL requires your approval before any PayPal call completes.",
+        rationale: "The $12 domain is over the $10 per-transaction limit, so MeshPaL requires your approval before any payment processor call completes.",
       }),
     ];
     const plan: Plan = {
@@ -103,7 +104,7 @@ export async function runBuySafelyScenario() {
       created_at: nowIso(),
     };
     store.plans.push(plan);
-    appendEvent(store, "plan.generated", "Buy-safely plan generated (offline, PayPal rail for both steps)", {
+    appendEvent(store, "plan.generated", "Buy-safely plan generated (offline, sandbox checkout rail for both steps)", {
       goal_id: goal.goal_id,
       plan_id: plan.plan_id,
       steps,
@@ -137,11 +138,12 @@ export async function runBuySafelyScenario() {
       laptop_prompt: MONEYMATE_DEMO_PROMPT,
       planner: plannerMode(),
       paypal: paypalMode(),
+      payment: paymentMode(),
     };
   });
 }
 
-/** Scenario C: malicious listing is untrusted data, policy DENY, no PayPal call; kill switch then blocks further spend. */
+/** Scenario C: malicious listing is untrusted data, policy DENY, no payment-processor call; kill switch then blocks further spend. */
 export async function runMaliciousScenario() {
   resetStore();
   return updateStore(async (store) => {
@@ -173,7 +175,7 @@ export async function runMaliciousScenario() {
       category: "misc",
       amount: 49,
       currency: "USD",
-      rail: "paypal_sandbox",
+      rail: checkoutRail(),
       approval_required: true,
       rationale: "Adversarial catalog item — listing tells the agent to ignore spending limits and pay immediately.",
       product_sku: evil.products[0].sku,
@@ -190,9 +192,9 @@ export async function runMaliciousScenario() {
     };
     store.plans.push(plan);
 
-    const paypalCallsBefore = store.payments.filter((p) => p.paypal?.order_id).length;
+    const processorTxBefore = store.payments.filter((p) => p.paypal?.order_id || p.braintree?.transaction_id).length;
     const injection = await executeStep(store, plan, evilStep);
-    const paypalCallsAfter = store.payments.filter((p) => p.paypal?.order_id).length;
+    const processorTxAfter = store.payments.filter((p) => p.paypal?.order_id || p.braintree?.transaction_id).length;
 
     store.settings.kill_switch = true;
     store.settings.kill_switch_at = nowIso();
@@ -216,11 +218,14 @@ export async function runMaliciousScenario() {
       goal,
       mandate,
       injection,
-      paypal_orders_created: paypalCallsAfter - paypalCallsBefore,
+      paypal_orders_created: processorTxAfter - processorTxBefore,
+      braintree_transactions_created: store.payments.filter((p) => p.braintree?.transaction_id).length,
+      processor_transactions_created: processorTxAfter - processorTxBefore,
       kill_switch: true,
       after_kill_switch: blockedAfterKill,
       planner: plannerMode(),
       paypal: paypalMode(),
+      payment: paymentMode(),
     };
   });
 }

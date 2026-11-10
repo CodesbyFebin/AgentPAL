@@ -17,6 +17,8 @@ import type {
   RenewalReview,
   AiCallLog,
 } from "@/lib/types";
+import type { PaymentMode } from "@/lib/payment-mode";
+import { BraintreeCheckout } from "./BraintreeCheckout";
 import { AuditTrailGrid, TransactionsGrid } from "./LedgerGrids";
 
 type Tab =
@@ -46,7 +48,7 @@ type Snapshot = {
   ai_calls: AiCallLog[];
   webhook_receipts: unknown[];
   settings: { kill_switch: boolean; kill_switch_at?: string; public_key: string };
-  modes: { planner: { planner: "offline" | "ai"; model?: string }; paypal: "sandbox" | "mock"; webhook?: string };
+  modes: { planner: { planner: "offline" | "ai"; model?: string }; payment?: PaymentMode; paypal: "sandbox" | "mock"; webhook?: string };
 };
 
 const TABS: { id: Tab; label: string }[] = [
@@ -149,8 +151,15 @@ export function MoneyMateMesh() {
     );
   }
 
-  const paypalTone = state.modes.paypal === "mock" ? "amber" : "mint";
+  const paymentMode = state.modes.payment || (state.modes.paypal === "mock" ? "mock" : "paypal-sandbox");
+  const paypalTone = paymentMode === "mock" ? "amber" : "mint";
   const plannerTone = state.modes.planner.planner === "offline" ? "amber" : "mint";
+  const paymentBadge =
+    paymentMode === "mock"
+      ? "Mock payments"
+      : paymentMode.startsWith("braintree")
+        ? "Braintree sandbox"
+        : "PayPal sandbox";
   const pending = state.approvals.filter((a) => a.status === "pending");
 
   return (
@@ -162,12 +171,12 @@ export function MoneyMateMesh() {
             <h1 className="font-display text-2xl text-white md:text-3xl">Your AI. Your Money. Your Rules.</h1>
             <p className="mt-1 max-w-2xl text-sm text-zinc-400">
               MoneyMate is the financial brain. MeshPaL is the trust and execution layer. Together they let an AI propose,
-              you approve, and the backend verify — including a real PayPal sandbox checkout.
+              you approve, and the backend verify — including a real sandbox checkout when credentials are set.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="zinc">Demo data</Badge>
-            <Badge tone={paypalTone}>{state.modes.paypal === "mock" ? "Mock PayPal" : "PayPal sandbox"}</Badge>
+            <Badge tone={paypalTone}>{paymentBadge}</Badge>
             <Badge tone={plannerTone}>
               {state.modes.planner.planner === "offline" ? "Offline coach" : `AI · ${state.modes.planner.model || "model"}`}
             </Badge>
@@ -616,7 +625,7 @@ function PaymentsPanel({
     <section className="card p-5">
       <h2 className="font-display text-xl text-white">Payments</h2>
       <p className="mt-1 text-sm text-zinc-400">
-        PayPal Orders v2 uses intent=AUTHORIZE, then capture only after outcome verification. INR checkouts are converted at the labelled demo FX rate because PayPal REST does not list INR.
+        Checkout authorizes first and captures only after outcome verification. When Braintree is configured, Drop-in collects a sandbox card or PayPal button nonce. INR amounts are converted at the labelled demo FX rate of ₹83 = $1 because this demo settles in USD.
       </p>
       {state.payments.length === 0 && <p className="mt-3 text-sm text-zinc-500">No payments yet. Run scenario A or propose a laptop from the coach.</p>}
       <ul className="mt-4 space-y-3">
@@ -627,16 +636,24 @@ function PaymentsPanel({
               <Badge tone={p.status === "captured" || p.status === "settled" ? "mint" : p.status === "denied" || p.status === "voided" ? "rose" : "amber"}>{p.status}</Badge>
             </div>
             <p className="mt-1 text-zinc-400">
-              {p.rail} {p.paypal?.mode ? `· ${p.paypal.mode}` : ""} {p.paypal?.settlement_amount != null ? `· settled ${formatMoney(p.paypal.settlement_amount, "USD")}` : ""}
+              {p.rail} {p.braintree?.mode || p.paypal?.mode ? `· ${p.braintree?.mode || p.paypal?.mode}` : ""} {(p.braintree?.settlement_amount ?? p.paypal?.settlement_amount) != null ? `· settled ${formatMoney((p.braintree?.settlement_amount ?? p.paypal?.settlement_amount) as number, "USD")}` : ""}
+              {p.braintree?.transaction_id ? ` · tx ${p.braintree.transaction_id}` : ""}
             </p>
-            {p.paypal?.fx_label && <p className="mt-1 text-[11px] text-zinc-500">{p.paypal.fx_label}</p>}
+            {(p.braintree?.fx_label || p.paypal?.fx_label) && <p className="mt-1 text-[11px] text-zinc-500">{p.braintree?.fx_label || p.paypal?.fx_label}</p>}
             <div className="mt-2 flex flex-wrap gap-2">
-              {p.status === "awaiting_buyer" && p.paypal?.approve_url && p.paypal.mode !== "mock" && (
+              {p.status === "awaiting_buyer" && p.rail === "braintree_sandbox" && (state.modes.payment || "").startsWith("braintree") && (
+                <BraintreeCheckout
+                  paymentId={p.payment_id}
+                  amountUsd={p.braintree?.settlement_amount ?? (p.currency === "INR" ? p.amount / 83 : p.amount)}
+                  onComplete={() => run("Refreshing after sandbox payment…", async () => undefined)}
+                />
+              )}
+              {p.status === "awaiting_buyer" && p.paypal?.approve_url && p.paypal.mode !== "mock" && p.rail !== "braintree_sandbox" && (
                 <a className="rounded-full border border-white/20 px-3 py-1 text-xs" href={p.paypal.approve_url}>
                   Open PayPal approval
                 </a>
               )}
-              {p.status === "awaiting_buyer" && (p.paypal?.mode === "mock" || state.modes.paypal === "mock") && (
+              {p.status === "awaiting_buyer" && (state.modes.payment || state.modes.paypal) === "mock" && (
                 <button
                   className="rounded-full bg-mesh-500 px-3 py-1 text-xs text-ink-950"
                   onClick={() => run("Simulating buyer approval…", async () => { await api(`/api/payments/${p.payment_id}/simulate-buyer`, { method: "POST" }); })}
@@ -662,8 +679,8 @@ function SubscriptionsPanel({
   return (
     <section className="space-y-4">
       <p className="rounded-xl border border-white/10 bg-ink-800/60 px-4 py-3 text-sm text-zinc-300">
-        Only subscriptions created through the MoneyMate Mesh merchant integration are managed. We do not intercept every renewal across a consumer PayPal account.
-        Sandbox billing does not fire on cue — use the labelled replay button.
+        Only subscriptions created through the MoneyMate Mesh merchant integration are managed. We do not intercept every renewal across a consumer account.
+        Sandbox billing does not fire on cue — use the labelled replay button. Cancelling a subscription is simulated unless PayPal REST credentials are set; Braintree subscription plans are not configured in this demo.
       </p>
       {state.subscriptions.length === 0 && (
         <p className="text-sm text-zinc-500">Run scenario B to seed CloudDraw, Logsense and StackMail under a $30/month mandate.</p>

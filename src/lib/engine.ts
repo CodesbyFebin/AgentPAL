@@ -7,7 +7,15 @@ import { signPayload } from "./crypto";
 import { draftEvidence } from "./evidence";
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
-import { authorizeOrder, captureAuthorization, createAuthorizeOrder, refundCapture, voidAuthorization } from "./paypal";
+import { checkoutRail, paymentMode } from "./payment-mode";
+import {
+  amountsMatch,
+  authorizeReservedPayment,
+  captureReservedPayment,
+  refundReservedPayment,
+  startPaymentCheckout,
+  voidReservedPayment,
+} from "./payment-provider";
 import { generatePlan } from "./planner";
 import { evaluatePolicy } from "./policy";
 import { buildReceipt, mandateSigningPayload } from "./receipts";
@@ -154,7 +162,7 @@ function newPayment(opts: {
     mandate_id: opts.plan.mandate_id,
     merchant_id: opts.step.merchant_id,
     merchant_name: opts.step.merchant_name,
-    rail: opts.step.rail,
+    rail: opts.step.rail === "x402_usdc" ? "x402_usdc" : checkoutRail(),
     amount: opts.step.amount,
     currency: opts.step.currency,
     status: opts.status,
@@ -303,10 +311,10 @@ export async function executeStep(
     return { payment, decision };
   }
 
-  const settlementCurrency = step.currency === "INR" ? "USD" : (step.currency === "USDC" ? "USD" : step.currency);
+  const settlementCurrency = "USD";
   const settlementAmount = step.currency === "INR" ? inrToUsd(step.amount) : step.amount;
   const fx = step.currency === "INR" ? fxBreakdown(step.amount) : undefined;
-  const order = await createAuthorizeOrder({
+  const session = await startPaymentCheckout({
     amount: settlementAmount,
     currency: settlementCurrency,
     description: `${step.action} at ${step.merchant_name} (agent on behalf of user)`,
@@ -315,28 +323,41 @@ export async function executeStep(
     returnUrl: `${appUrl()}/paypal/return?payment_id=${encodeURIComponent(payment.payment_id)}`,
     cancelUrl: `${appUrl()}/paypal/cancel?payment_id=${encodeURIComponent(payment.payment_id)}`,
   });
-  payment.rail = "paypal_sandbox";
-  payment.paypal = {
-    mode: order.mode,
-    order_id: order.order_id,
-    approve_url: order.approve_url,
-    settlement_currency: "USD",
+  payment.rail = session.provider === "braintree" ? "braintree_sandbox" : "paypal_sandbox";
+  const settlement = {
+    settlement_currency: "USD" as const,
     settlement_amount: settlementAmount,
     fx_rate: fx?.rate,
     fx_label: fx?.label,
   };
+  if (session.provider === "braintree") {
+    payment.braintree = {
+      mode: session.mode,
+      order_id: session.order_id,
+      ...settlement,
+    };
+  } else {
+    payment.paypal = {
+      mode: session.mode,
+      order_id: session.order_id,
+      approve_url: session.approve_url,
+      ...settlement,
+    };
+  }
   payment.status = "awaiting_buyer";
   payment.updated_at = nowIso();
+  const providerLabel = session.provider === "braintree" ? "Braintree" : session.provider === "mock" ? "Mock PayPal" : "PayPal";
   appendEvent(
     store,
-    "payment.paypal.order_created",
-    `PayPal ${order.mode} order ${order.order_id} created with intent=AUTHORIZE for ${formatMoney(step.amount, step.currency)}${fx ? ` (settled as ${formatMoney(settlementAmount, "USD")} at the labeled demo FX rate)` : ""}`,
+    session.provider === "braintree" ? "payment.braintree.checkout_started" : "payment.paypal.order_created",
+    `${providerLabel} ${session.mode} checkout ${session.order_id} prepared (authorize, then capture after verification) for ${formatMoney(step.amount, step.currency)}${fx ? ` (settled as ${formatMoney(settlementAmount, "USD")} at the labeled demo FX rate)` : ""}. No capture has occurred.`,
     {
       goal_id: plan.goal_id,
       payment_id: payment.payment_id,
-      order_id: order.order_id,
-      mode: order.mode,
-      approve_url: order.approve_url,
+      order_id: session.order_id,
+      mode: session.mode,
+      provider: session.provider,
+      approve_url: session.approve_url,
     },
   );
   return { payment, decision };
@@ -375,63 +396,131 @@ export function fulfillAndMaybeSettle(store: StoreData, payment: Payment, step: 
   return verification;
 }
 
-export async function completePaypalAfterBuyer(store: StoreData, paymentId: string, orderId?: string) {
+export async function completePaymentAfterBuyer(
+  store: StoreData,
+  paymentId: string,
+  opts: { orderId?: string; nonce?: string } = {},
+) {
   const payment = store.payments.find((p) => p.payment_id === paymentId);
   if (!payment) throw new Error("Payment not found");
   const plan = store.plans.find((p) => p.plan_id === payment.plan_id);
   const step = plan?.steps.find((s) => s.step_id === payment.step_id);
   if (!plan || !step) throw new Error("Plan step not found");
 
-  const oid = orderId || payment.paypal?.order_id;
-  if (!oid) throw new Error("Missing PayPal order id");
+  const expectedAmount =
+    payment.braintree?.settlement_amount ??
+    payment.paypal?.settlement_amount ??
+    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount);
+  const expectedCurrency = "USD";
 
-  const auth = await authorizeOrder(oid);
-  payment.paypal = {
-    ...(payment.paypal || { mode: auth.mode }),
-    mode: auth.mode,
-    order_id: oid,
-    authorization_id: auth.authorization_id,
-  };
+  const auth = await authorizeReservedPayment({
+    payment,
+    nonce: opts.nonce,
+    orderId: opts.orderId,
+    expectedAmount,
+    expectedCurrency,
+  });
+
+  if (!amountsMatch(auth.amount, expectedAmount, auth.currency, expectedCurrency)) {
+    try {
+      await voidReservedPayment(auth.authorization_id, payment.rail);
+    } catch {
+      /* still fail closed */
+    }
+    payment.status = "failed";
+    payment.updated_at = nowIso();
+    if (payment.rail === "braintree_sandbox") {
+      payment.braintree = {
+        ...(payment.braintree || { mode: "sandbox" }),
+        transaction_id: auth.authorization_id,
+        authorization_id: auth.authorization_id,
+        status: "voided_amount_mismatch",
+      };
+    }
+    appendEvent(
+      store,
+      "payment.authorization.mismatch",
+      `Authorization ${auth.authorization_id} voided because ${auth.currency} ${auth.amount} did not match the reserved ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
+      {
+        goal_id: payment.goal_id,
+        payment_id: payment.payment_id,
+        authorization_id: auth.authorization_id,
+        expected_amount: expectedAmount,
+        actual_amount: auth.amount,
+      },
+    );
+    throw new Error(
+      `Authorized amount ${auth.currency} ${auth.amount} does not match the reserved mandate amount ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
+    );
+  }
+
+  if (payment.rail === "braintree_sandbox") {
+    payment.braintree = {
+      ...(payment.braintree || { mode: auth.mode }),
+      mode: auth.mode,
+      transaction_id: auth.authorization_id,
+      authorization_id: auth.authorization_id,
+      status: auth.status,
+      settlement_currency: "USD",
+      settlement_amount: expectedAmount,
+    };
+  } else {
+    payment.paypal = {
+      ...(payment.paypal || { mode: auth.mode }),
+      mode: auth.mode,
+      order_id: opts.orderId || payment.paypal?.order_id,
+      authorization_id: auth.authorization_id,
+    };
+  }
   payment.status = "authorized";
   payment.updated_at = nowIso();
+  const authLabel = payment.rail === "braintree_sandbox" ? "Braintree" : auth.mode === "mock" ? "Mock PayPal" : "PayPal";
   appendEvent(
     store,
-    "payment.paypal.authorized",
-    `PayPal authorization ${auth.authorization_id} held (not captured) for ${payment.merchant_name}`,
+    payment.rail === "braintree_sandbox" ? "payment.braintree.authorized" : "payment.paypal.authorized",
+    `${authLabel} authorization ${auth.authorization_id} held (not captured) for ${payment.merchant_name}`,
     {
       goal_id: payment.goal_id,
       payment_id: payment.payment_id,
       authorization_id: auth.authorization_id,
       mode: auth.mode,
+      provider: auth.provider,
     },
   );
 
   const verification = fulfillAndMaybeSettle(store, payment, step);
   if (verification.status === "passed") {
-    const cap = await captureAuthorization(auth.authorization_id);
-    payment.paypal.capture_id = cap.capture_id;
+    const cap = await captureReservedPayment(auth.authorization_id, payment.rail);
+    if (payment.rail === "braintree_sandbox" && payment.braintree) {
+      payment.braintree.capture_id = cap.capture_id;
+      payment.braintree.status = cap.status || "submitted_for_settlement";
+    } else if (payment.paypal) {
+      payment.paypal.capture_id = cap.capture_id;
+    }
     payment.status = "captured";
     payment.updated_at = nowIso();
     appendEvent(
       store,
-      "payment.paypal.captured",
-      `PayPal capture ${cap.capture_id} after verification passed`,
+      payment.rail === "braintree_sandbox" ? "payment.braintree.captured" : "payment.paypal.captured",
+      `${authLabel} capture ${cap.capture_id} after verification passed`,
       {
         goal_id: payment.goal_id,
         payment_id: payment.payment_id,
         capture_id: cap.capture_id,
         mode: cap.mode,
+        status: cap.status,
       },
     );
     applyCapturedPurchase(store, payment);
   } else {
-    await voidAuthorization(auth.authorization_id);
+    await voidReservedPayment(auth.authorization_id, payment.rail);
     payment.status = "voided";
     payment.updated_at = nowIso();
+    if (payment.braintree) payment.braintree.status = "voided";
     appendEvent(
       store,
-      "payment.paypal.voided",
-      `PayPal authorization ${auth.authorization_id} voided because verification failed`,
+      payment.rail === "braintree_sandbox" ? "payment.braintree.voided" : "payment.paypal.voided",
+      `${authLabel} authorization ${auth.authorization_id} voided because verification failed`,
       {
         goal_id: payment.goal_id,
         payment_id: payment.payment_id,
@@ -450,6 +539,11 @@ export async function completePaypalAfterBuyer(store: StoreData, paymentId: stri
   return payment;
 }
 
+/** @deprecated Use completePaymentAfterBuyer */
+export async function completePaypalAfterBuyer(store: StoreData, paymentId: string, orderId?: string) {
+  return completePaymentAfterBuyer(store, paymentId, { orderId });
+}
+
 export async function refundPayment(store: StoreData, paymentId: string) {
   const payment = store.payments.find((p) => p.payment_id === paymentId);
   if (!payment) throw new Error("Payment not found");
@@ -463,12 +557,24 @@ export async function refundPayment(store: StoreData, paymentId: string) {
     });
     return payment;
   }
-  if (!payment.paypal?.capture_id) throw new Error("No capture to refund");
-  const ref = await refundCapture(payment.paypal.capture_id, payment.paypal.settlement_amount ?? (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount), payment.paypal.settlement_currency || "USD");
-  payment.paypal.refund_id = ref.refund_id;
+  const captureId = payment.braintree?.capture_id || payment.paypal?.capture_id;
+  if (!captureId) throw new Error("No capture to refund");
+  const amount =
+    payment.braintree?.settlement_amount ??
+    payment.paypal?.settlement_amount ??
+    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount);
+  const currency = payment.braintree?.settlement_currency || payment.paypal?.settlement_currency || "USD";
+  const ref = await refundReservedPayment(captureId, payment.rail, amount, currency);
+  if (payment.rail === "braintree_sandbox" && payment.braintree) {
+    payment.braintree.refund_id = ref.refund_id;
+    payment.braintree.status = "refunded";
+  } else if (payment.paypal) {
+    payment.paypal.refund_id = ref.refund_id;
+  }
   payment.status = "refunded";
   payment.updated_at = nowIso();
-  appendEvent(store, "payment.paypal.refunded", `PayPal refund ${ref.refund_id} issued`, {
+  const refundLabel = payment.rail === "braintree_sandbox" ? "Braintree" : ref.mode === "mock" ? "Mock PayPal" : "PayPal";
+  appendEvent(store, payment.rail === "braintree_sandbox" ? "payment.braintree.refunded" : "payment.paypal.refunded", `${refundLabel} refund ${ref.refund_id} issued`, {
     goal_id: payment.goal_id,
     payment_id: payment.payment_id,
     refund_id: ref.refund_id,
@@ -555,6 +661,7 @@ export async function runDemoScenario() {
       injection,
       planner: plannerMode(),
       paypal: paypalMode(),
+      payment: paymentMode(),
     };
   });
 }
@@ -607,6 +714,7 @@ export function snapshot() {
       financial_snapshots: store.financial_snapshots ?? [],
       modes: {
         planner: plannerMode(),
+        payment: paymentMode(),
         paypal: paypalMode(),
         webhook: process.env.PAYPAL_WEBHOOK_ID ? "configured" : "unset",
       },

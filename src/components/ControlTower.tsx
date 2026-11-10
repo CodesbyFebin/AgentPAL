@@ -14,6 +14,8 @@ import type {
   AuditEvent,
   Verification,
 } from "@/lib/types";
+import type { PaymentMode } from "@/lib/payment-mode";
+import { BraintreeCheckout } from "./BraintreeCheckout";
 import { AuditGrid } from "./AuditGrid";
 
 interface Budget {
@@ -38,6 +40,7 @@ interface State {
   budget: Budget | null;
   modes: {
     planner: { planner: "offline" | "ai"; model?: string };
+    payment?: PaymentMode;
     paypal: "sandbox" | "mock";
     webhook?: string;
   };
@@ -118,8 +121,12 @@ export function ControlTower() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={state?.modes.planner.planner === "ai" ? "live" : "off"}>{plannerLabel}</Badge>
-            <Badge tone={state?.modes.paypal === "sandbox" ? "live" : "off"}>
-              {state?.modes.paypal === "sandbox" ? "PayPal sandbox" : "Mock PayPal"}
+            <Badge tone={(state?.modes.payment || state?.modes.paypal) === "mock" ? "off" : "live"}>
+              {(state?.modes.payment || "").startsWith("braintree")
+                ? "Braintree sandbox"
+                : state?.modes.paypal === "sandbox"
+                  ? "PayPal sandbox"
+                  : "Mock payments"}
             </Badge>
             <Badge tone={state?.settings.kill_switch ? "danger" : "ok"}>
               {state?.settings.kill_switch ? "Kill switch ON" : "Kill switch off"}
@@ -337,11 +344,18 @@ export function ControlTower() {
               {awaitingBuyer.map((p) => (
                 <div key={p.payment_id} className="rounded-xl border border-sky-400/20 bg-sky-400/5 p-4">
                   <p className="text-white">
-                    {p.merchant_name} · waiting on PayPal {p.paypal?.mode} buyer approval
+                    {p.merchant_name} · waiting on {p.rail === "braintree_sandbox" ? "Braintree" : "PayPal"} {p.braintree?.mode || p.paypal?.mode} buyer approval
                   </p>
-                  <p className="mt-1 font-mono text-xs text-zinc-500">order {p.paypal?.order_id}</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-500">order {p.braintree?.order_id || p.paypal?.order_id}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {p.paypal?.approve_url && (
+                    {p.status === "awaiting_buyer" && p.rail === "braintree_sandbox" && (state?.modes.payment || "").startsWith("braintree") && (
+                      <BraintreeCheckout
+                        paymentId={p.payment_id}
+                        amountUsd={p.braintree?.settlement_amount ?? p.amount}
+                        onComplete={() => run("buyer", async () => undefined)}
+                      />
+                    )}
+                    {p.paypal?.approve_url && p.rail !== "braintree_sandbox" && (
                       <a
                         href={p.paypal.approve_url}
                         className="rounded-lg bg-sky-400 px-3 py-1.5 text-sm font-medium text-ink-950"
@@ -349,7 +363,7 @@ export function ControlTower() {
                         Open PayPal approve link
                       </a>
                     )}
-                    {(p.paypal?.mode === "mock" || state?.modes.paypal === "mock") && (
+                    {((state?.modes.payment || state?.modes.paypal) === "mock") && (
                       <button
                         className="rounded-lg bg-white/10 px-3 py-1.5 text-sm text-white disabled:opacity-50"
                         disabled={!!busy}

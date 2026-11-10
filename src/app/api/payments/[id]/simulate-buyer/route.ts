@@ -1,6 +1,7 @@
-import { completePaypalAfterBuyer } from "@/lib/engine";
+import { completePaymentAfterBuyer } from "@/lib/engine";
 import { fail, ok } from "@/lib/http";
-import { paypalMode, updateStore } from "@/lib/store";
+import { paymentMode } from "@/lib/payment-mode";
+import { updateStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,12 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       if (payment.status !== "awaiting_buyer") {
         throw new Error(`Payment is ${payment.status}, expected awaiting_buyer`);
       }
-      if (paypalMode() !== "mock" && payment.paypal?.mode !== "mock") {
-        throw new Error("simulate-buyer is only available in mock PayPal mode. Use the PayPal approve link in sandbox mode.");
+      if (paymentMode() !== "mock" && payment.paypal?.mode !== "mock") {
+        throw new Error(
+          "simulate-buyer is only available in mock payment mode. Use Braintree Drop-in or the PayPal approve link when sandbox credentials are configured.",
+        );
       }
-      return completePaypalAfterBuyer(store, payment.payment_id);
+      return completePaymentAfterBuyer(store, payment.payment_id);
     });
     return ok({ payment });
   } catch (err) {

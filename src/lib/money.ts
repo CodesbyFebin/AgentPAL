@@ -3,7 +3,7 @@ export const DEMO_FX = {
   inrPerUsd: 83,
   paypalCurrency: "USD" as const,
   label:
-    "Demo fixed rate: ₹83.00 = US$1.00. The PayPal REST API currency list does not include INR, so sandbox checkout is submitted in USD. This rate is not a live FX quote.",
+    "Demo fixed rate: ₹83.00 = US$1.00. Sandbox checkout is submitted in USD because INR is not a settlement currency in this demo. This rate is not a live FX quote.",
   source: "demo fixed rate" as const,
   docsUrl: "https://developer.paypal.com/api/codes/currency",
 };
