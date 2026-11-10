@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+data/*.json
+!data/.gitkeep
+.env
+.env.local
+*.log
+npm-debug.log*
+.DS_Store
+coverage
