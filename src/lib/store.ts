@@ -3,13 +3,16 @@ import path from "path";
 import { generateEd25519Pem } from "./crypto";
 import { SEED_MERCHANTS } from "./catalog";
 import { seedFinance } from "./finance-seed";
+import { monthlyCashFlow } from "./finance-engine";
+import { seedCategories, seedMerchantDirectory } from "./merchant-directory";
+import { id } from "./ids";
 import type { StoreData } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "moneymate.json");
 
 function emptyStore(): StoreData {
-  return {
+  const store: StoreData = {
     goals: [],
     mandates: [],
     plans: [],
@@ -28,11 +31,19 @@ function emptyStore(): StoreData {
     renewal_reviews: [],
     reservations: [],
     ai_calls: [],
+    subscription_price_history: [],
+    recurring_rules: [],
+    merchant_directory: [],
+    categories: [],
+    ai_tool_logs: [],
+    financial_snapshots: [],
     settings: {
       kill_switch: false,
       signing: generateEd25519Pem(),
     },
   };
+  hydrateStore(store);
+  return store;
 }
 
 let memory: StoreData | null = null;
@@ -50,12 +61,54 @@ function hydrateStore(store: StoreData) {
   store.renewal_reviews ??= [];
   store.reservations ??= [];
   store.ai_calls ??= [];
+  store.subscription_price_history ??= [];
+  store.recurring_rules ??= [];
+  store.merchant_directory ??= [];
+  store.categories ??= [];
+  store.ai_tool_logs ??= store.ai_calls;
+  store.financial_snapshots ??= [];
   for (const m of store.mandates) {
     m.per_tx_limit ??= m.auto_approve_limit;
     m.approval_threshold ??= m.per_tx_limit;
     m.allow_recurring ??= false;
     m.minimum_balance ??= 0;
     m.currency ??= "USD";
+  }
+  // Render disks are ephemeral: if collections are empty on first boot, seed demo data automatically.
+  if (!store.categories.length) store.categories = seedCategories();
+  if (!store.merchant_directory.length) {
+    const names = (store.finance.transactions || []).map((txn) => txn.merchant);
+    store.merchant_directory = seedMerchantDirectory(store.merchants || [], names);
+  }
+  if (!store.financial_snapshots.length && store.finance) {
+    const flow = monthlyCashFlow(store.finance);
+    store.financial_snapshots.push({
+      snapshot_id: id("snap"),
+      date: store.finance.profile.as_of,
+      month: flow.month,
+      balances: flow.net_worth,
+      income: flow.income,
+      expenses: flow.expenses,
+      transfers: flow.transfers,
+      net_worth: flow.net_worth,
+      currency: "INR",
+    });
+  }
+  for (const sub of store.subscriptions) {
+    for (const change of sub.price_history || []) {
+      if (!store.subscription_price_history.some((h) => h.history_id === change.change_id)) {
+        store.subscription_price_history.push({
+          history_id: change.change_id,
+          subscription_id: sub.subscription_id,
+          old_price: change.previous,
+          new_price: change.next,
+          changed_at: change.effective_at,
+          source: change.source,
+          material: change.material,
+          currency: sub.currency,
+        });
+      }
+    }
   }
 }
 

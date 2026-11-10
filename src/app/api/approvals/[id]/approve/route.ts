@@ -3,6 +3,7 @@ import { appendEvent } from "@/lib/events";
 import { fail, ok } from "@/lib/http";
 import { nowIso } from "@/lib/ids";
 import { updateStore } from "@/lib/store";
+import { applyApprovedRenewal } from "@/lib/subscriptions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,11 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
         goal_id: approval.goal_id,
         approval_id: approval.approval_id,
         payment_id: approval.payment_id,
+        kind: approval.kind || "payment",
       });
+      if (approval.kind === "renewal") {
+        return applyApprovedRenewal(store, approval.approval_id);
+      }
       const payment = store.payments.find((p) => p.payment_id === approval.payment_id);
       const plan = store.plans.find((p) => p.steps.some((s) => s.step_id === approval.step_id));
       const step = plan?.steps.find((s) => s.step_id === approval.step_id);

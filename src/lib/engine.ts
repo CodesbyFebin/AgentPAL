@@ -599,10 +599,15 @@ export function snapshot() {
       renewal_reviews: store.renewal_reviews,
       reservations: store.reservations,
       ai_calls: store.ai_calls,
+      ai_tool_logs: store.ai_tool_logs ?? store.ai_calls,
+      subscription_price_history: store.subscription_price_history ?? [],
+      recurring_rules: store.recurring_rules ?? [],
+      merchant_directory: store.merchant_directory ?? [],
+      categories: store.categories ?? [],
+      financial_snapshots: store.financial_snapshots ?? [],
       modes: {
         planner: plannerMode(),
         paypal: paypalMode(),
-        paypalClientId: process.env.PAYPAL_CLIENT_ID || null,
         webhook: process.env.PAYPAL_WEBHOOK_ID ? "configured" : "unset",
       },
     };

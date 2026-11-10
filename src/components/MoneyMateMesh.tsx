@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
-import { budgetProgress } from "@/lib/finance-engine";
+import { budgetProgress, monthlyCashFlow } from "@/lib/finance-engine";
 import { formatINR, formatMoney } from "@/lib/money";
 import { annualizedDelta, lifecycleOf, raisedThisYear } from "@/lib/subscription-metrics";
 import type {
@@ -165,13 +165,26 @@ export function MoneyMateMesh() {
               you approve, and the backend verify — including a real PayPal sandbox checkout.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge tone="zinc">Demo data</Badge>
             <Badge tone={paypalTone}>{state.modes.paypal === "mock" ? "Mock PayPal" : "PayPal sandbox"}</Badge>
             <Badge tone={plannerTone}>
               {state.modes.planner.planner === "offline" ? "Offline coach" : `AI · ${state.modes.planner.model || "model"}`}
             </Badge>
             {state.settings.kill_switch && <Badge tone="rose">Kill switch on</Badge>}
+            <button
+              type="button"
+              className="rounded-full border border-amber-400/40 px-3 py-1 text-xs text-amber-100"
+              onClick={() =>
+                run("Resetting demo…", async () => {
+                  await api("/api/demo/reset", { method: "POST" });
+                  setMessages([]);
+                  setAnalysis(null);
+                }, "overview")
+              }
+            >
+              Reset demo
+            </button>
           </div>
         </div>
         <nav className="mx-auto hidden max-w-6xl gap-1 px-4 pb-3 md:flex md:flex-wrap">
@@ -217,6 +230,24 @@ export function MoneyMateMesh() {
                 <p className="mt-1 text-xs text-zinc-500">Expected 30 Nov 2026</p>
               </article>
             </div>
+
+
+            {(() => {
+              const flow = monthlyCashFlow(state.finance);
+              return (
+                <article className="card p-5">
+                  <h3 className="font-display text-lg text-white">This month&apos;s cash flow</h3>
+                  <p className="mt-1 text-xs text-zinc-500">{flow.month} · transfers excluded from income and expenses</p>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-sm text-zinc-300 md:grid-cols-5">
+                    <div><dt className="text-xs text-zinc-500">Income</dt><dd className="text-mesh-300">{formatINR(flow.income)}</dd></div>
+                    <div><dt className="text-xs text-zinc-500">Expenses</dt><dd className="text-rose-300">{formatINR(flow.expenses)}</dd></div>
+                    <div><dt className="text-xs text-zinc-500">Transfers</dt><dd>{formatINR(flow.transfers)}</dd></div>
+                    <div><dt className="text-xs text-zinc-500">Net</dt><dd>{formatINR(flow.net)}</dd></div>
+                    <div><dt className="text-xs text-zinc-500">Net worth</dt><dd>{formatINR(flow.net_worth)}</dd></div>
+                  </dl>
+                </article>
+              );
+            })()}
 
             <div className="grid gap-4 md:grid-cols-2">
               <article className="card p-5">
@@ -388,7 +419,7 @@ export function MoneyMateMesh() {
         {tab === "subscriptions" && <SubscriptionsPanel state={state} run={run} />}
 
         {tab === "transactions" && (
-          <TransactionsGrid transactions={state.finance.transactions} payments={state.payments} />
+          <TransactionsGrid transactions={state.finance.transactions} payments={state.payments} receipts={state.receipts} />
         )}
 
         {tab === "audit" && (
@@ -525,15 +556,15 @@ function SafetyPanel({
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   className="rounded-full bg-mesh-500 px-3 py-1 text-xs text-ink-950"
-                  onClick={() => run("Approving…", async () => { await api(`/api/approvals/${a.approval_id}/approve`, { method: "POST" }); }, "payments")}
+                  onClick={() => run("Approving…", async () => { await api(`/api/approvals/${a.approval_id}/approve`, { method: "POST" }); }, a.kind === "renewal" ? "subscriptions" : "payments")}
                 >
-                  Approve
+                  {a.kind === "renewal" ? "Approve new price" : "Approve"}
                 </button>
                 <button
                   className="rounded-full border border-white/20 px-3 py-1 text-xs"
-                  onClick={() => run("Denying…", async () => { await api(`/api/approvals/${a.approval_id}/deny`, { method: "POST" }); })}
+                  onClick={() => run("Denying…", async () => { await api(`/api/approvals/${a.approval_id}/deny`, { method: "POST" }); }, a.kind === "renewal" ? "subscriptions" : undefined)}
                 >
-                  Deny
+                  {a.kind === "renewal" ? "Decline and cancel via PayPal" : "Deny"}
                 </button>
               </div>
             </li>
@@ -687,19 +718,46 @@ function SubscriptionsPanel({
           );
         })}
       </div>
-      {state.renewal_reviews?.length > 0 && (
-        <article className="card p-5">
-          <h3 className="font-display text-lg text-white">Renewal reviews</h3>
-          <ul className="mt-3 space-y-2 text-sm">
-            {state.renewal_reviews.map((r) => (
-              <li key={r.review_id}>
-                <Badge tone={r.decision === "ALLOW" ? "mint" : r.decision === "DENY" ? "rose" : "amber"}>{r.decision}</Badge>{" "}
-                <span className="text-zinc-300">{r.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-      )}
+      {state.renewal_reviews?.filter((r) => r.intelligence).slice().reverse().map((r) => {
+        const i = r.intelligence;
+        const pending = state.approvals.find((a) => a.approval_id === r.approval_id && a.status === "pending");
+        const sub = state.subscriptions.find((s) => s.subscription_id === r.subscription_id);
+        return (
+          <article key={r.review_id} className="card border border-amber-400/30 p-5">
+            <p className="text-xs uppercase tracking-[0.18em] text-amber-200">Subscription Intelligence</p>
+            <h3 className="mt-1 font-display text-lg text-white">{sub?.plan_name || "Renewal"}</h3>
+            <p className="mt-2 text-sm text-zinc-200">
+              {formatMoney(i.previous_monthly_price, i.currency)} → {formatMoney(i.new_monthly_price, i.currency)}{" "}
+              ({i.percent_change > 0 ? "+" : ""}{i.percent_change}%, {i.monthly_increase >= 0 ? "+" : ""}{formatMoney(i.monthly_increase, i.currency)}/mo, {i.annual_increase >= 0 ? "+" : ""}{formatMoney(i.annual_increase, i.currency)}/yr)
+            </p>
+            <dl className="mt-3 grid gap-2 text-sm text-zinc-300 sm:grid-cols-2">
+              <div>Mandate cap <span className="text-white">{formatMoney(i.mandate_limit, i.currency)}</span></div>
+              <div>Other subscriptions <span className="text-white">{formatMoney(i.other_subscriptions_total, i.currency)}</span></div>
+              <div>Projected monthly total <span className="text-white">{formatMoney(i.projected_total, i.currency)}</span></div>
+              <div>Exceeds mandate by <span className={i.exceeds_by > 0 ? "text-rose-300" : "text-mesh-300"}>{formatMoney(Math.max(0, i.exceeds_by), i.currency)}</span></div>
+            </dl>
+            <p className="mt-3 text-sm text-zinc-400">
+              <Badge tone={r.decision === "ALLOW" ? "mint" : r.decision === "DENY" ? "rose" : "amber"}>{r.decision}</Badge> {r.reason}
+            </p>
+            {pending && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="rounded-full bg-mesh-500 px-3 py-1 text-xs text-ink-950"
+                  onClick={() => run("Approving renewal…", async () => { await api(`/api/approvals/${pending.approval_id}/approve`, { method: "POST" }); })}
+                >
+                  Approve new price
+                </button>
+                <button
+                  className="rounded-full border border-rose-400/40 px-3 py-1 text-xs text-rose-200"
+                  onClick={() => run("Declining and cancelling…", async () => { await api(`/api/approvals/${pending.approval_id}/deny`, { method: "POST" }); })}
+                >
+                  Decline and cancel via PayPal
+                </button>
+              </div>
+            )}
+          </article>
+        );
+      })}
     </section>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessAffordability, availableToSpend } from "@/lib/finance-engine";
+import { assessAffordability, assessFromFinance, availableToSpend, monthlyCashFlow, netWorth } from "@/lib/finance-engine";
 import { seedFinance, SEED_EMERGENCY_BUFFER, SEED_NEXT_INCOME_AMOUNT, SEED_NEXT_INCOME_AT } from "@/lib/finance-seed";
 import { recordPriceChange } from "@/lib/subscriptions";
 import { isMaterialShift, raisedThisYear } from "@/lib/subscription-metrics";
@@ -92,9 +92,30 @@ describe("subscription price history helpers", () => {
       currency: "USD",
       price_history: [],
     } as unknown as ManagedSubscription;
-    recordPriceChange(sub, 16, "detected", "2026-11-10T00:00:00.000Z");
+    recordPriceChange(null, sub, 16, "detected", "2026-11-10T00:00:00.000Z");
     expect(sub.price_history[0].material).toBe(true);
     expect(raisedThisYear(sub, 2026)).toBe(1);
     expect(sub.amount).toBe(12); // recordPriceChange does not mutate amount
+  });
+});
+
+describe("cash flow", () => {
+  it("excludes transfers from income and expenses and reports net worth", () => {
+    const november = monthlyCashFlow(finance, "2026-11");
+    const october = monthlyCashFlow(finance, "2026-10");
+    expect(november.month).toBe("2026-11");
+    // Salary lands on the 30th; the demo clock is 10 Nov 2026, so November income is still 0.
+    expect(november.income).toBe(0);
+    expect(november.expenses).toBeGreaterThan(0);
+    expect(october.income).toBe(120000);
+    expect(november.net).toBe(Math.round((november.income - november.expenses) * 100) / 100);
+    expect(november.net_worth).toBe(netWorth(finance.accounts));
+    expect(november.net_worth).toBe(207400);
+  });
+
+  it("feeds cash flow into the affordability result", () => {
+    const r = assessFromFinance(finance, 40000);
+    expect(r.cash_flow?.net_worth).toBe(207400);
+    expect(r.verdict).toBe("AFFORDABLE");
   });
 });

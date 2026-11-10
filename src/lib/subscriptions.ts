@@ -1,14 +1,15 @@
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
 import { formatMoney } from "./money";
-import { cancelSubscription } from "./paypal";
+import { cancelSubscription, getSubscription } from "./paypal";
 import { evaluatePolicy } from "./policy";
 import type { ManagedSubscription, Mandate, PriceChange, PriceChangeSource, RenewalReview, StoreData } from "./types";
-import { isMaterialShift, lifecycleOf, makePriceChange } from "./subscription-metrics";
+import { buildRenewalIntelligence, isMaterialShift, lifecycleOf, makePriceChange } from "./subscription-metrics";
 
 export { annualizedDelta, isMaterialShift, lifecycleOf, MATERIAL_PRICE_SHIFT, raisedThisYear } from "./subscription-metrics";
 
 export function recordPriceChange(
+  store: StoreData | null,
   sub: ManagedSubscription,
   next: number,
   source: PriceChangeSource,
@@ -18,6 +19,19 @@ export function recordPriceChange(
   sub.price_history = [...(sub.price_history || []), change];
   sub.expected_amount_min = Math.min(sub.expected_amount_min ?? sub.amount, next, sub.amount);
   sub.expected_amount_max = Math.max(sub.expected_amount_max ?? sub.amount, next, sub.amount);
+  if (store) {
+    store.subscription_price_history = store.subscription_price_history || [];
+    store.subscription_price_history.push({
+      history_id: change.change_id,
+      subscription_id: sub.subscription_id,
+      old_price: change.previous,
+      new_price: change.next,
+      changed_at: change.effective_at,
+      source: change.source,
+      material: change.material,
+      currency: sub.currency,
+    });
+  }
   return change;
 }
 
@@ -85,6 +99,19 @@ export function seedDemoSubscriptions(store: StoreData, mandate?: Mandate): Mana
     created_at: nowIso(),
   }));
   store.subscriptions.push(...created);
+  store.recurring_rules = store.recurring_rules || [];
+  for (const s of created) {
+    store.recurring_rules.push({
+      rule_id: id("rule"),
+      subscription_id: s.subscription_id,
+      frequency: "monthly",
+      expected_amount: s.amount,
+      expected_amount_min: s.amount,
+      expected_amount_max: s.amount,
+      category: "software",
+      bill_type: "subscription",
+    });
+  }
   appendEvent(
     store,
     "subscriptions.seeded",
@@ -98,30 +125,50 @@ export function evaluateRenewal(
   store: StoreData,
   subscription: ManagedSubscription,
   proposedAmount: number,
+  now: Date = new Date(),
 ): RenewalReview {
   const mandate = store.mandates.find((m) => m.mandate_id === subscription.mandate_id) ?? store.mandates.find((m) => m.allow_recurring);
   const priceIncreased = proposedAmount > subscription.amount + 1e-9;
   const others = monthlySubscriptionSpend(store, subscription.subscription_id);
-  const nextTotal = others + proposedAmount;
+  const mandateLimit = mandate?.max_total_spend ?? SUBSCRIPTION_CAP_USD;
+  const intelligence = buildRenewalIntelligence({
+    previous: subscription.amount,
+    next: proposedAmount,
+    mandateLimit,
+    otherSubscriptionsTotal: others,
+    currency: subscription.currency,
+  });
+  const life = lifecycleOf(subscription);
+  const expired = Boolean(
+    mandate && Number.isFinite(new Date(mandate.expires_at).getTime()) && new Date(mandate.expires_at).getTime() <= now.getTime(),
+  );
 
   let decision: RenewalReview["decision"] = "ALLOW";
-  let reason = `Renewal of ${subscription.plan_name} at ${formatMoney(proposedAmount, subscription.currency)} keeps monthly software spend at ${formatMoney(nextTotal, "USD")}, within the ${formatMoney(SUBSCRIPTION_CAP_USD, "USD")} cap.`;
+  let reason = `Renewal of ${subscription.plan_name} at ${formatMoney(proposedAmount, subscription.currency)} keeps monthly software spend at ${formatMoney(intelligence.projected_total, "USD")}, within the ${formatMoney(mandateLimit, "USD")} cap.`;
 
   if (store.settings.kill_switch) {
     decision = "DENY";
     reason = "Kill switch is on. Renewals are frozen.";
-  } else if (!mandate || mandate.status !== "active") {
+  } else if (life === "suggested") {
     decision = "DENY";
-    reason = "No active recurring mandate covers this subscription.";
+    reason = `${subscription.plan_name} is still suggested (unconfirmed). An unconfirmed subscription cannot renew until a human confirms it.`;
+  } else if (life === "paused" || life === "ended") {
+    decision = "DENY";
+    reason = `${subscription.plan_name} is ${life}. Paused or ended subscriptions are never charged.`;
+  } else if (!mandate || mandate.status !== "active" || expired) {
+    decision = "DENY";
+    reason = expired
+      ? `The recurring mandate expired at ${mandate?.expires_at}. Renewals are denied until a new mandate is signed.`
+      : "No active recurring mandate covers this subscription.";
   } else if (!mandate.approved_merchants.includes(subscription.merchant_id)) {
     decision = "DENY";
     reason = `${subscription.merchant_name} is not on the subscription mandate allowlist.`;
-  } else if (nextTotal > (mandate.max_total_spend || SUBSCRIPTION_CAP_USD) + 1e-9) {
+  } else if (intelligence.projected_total > mandateLimit + 1e-9) {
     decision = "REQUIRE_APPROVAL";
-    reason = `A renewal at ${formatMoney(proposedAmount, "USD")} would take monthly software spend to ${formatMoney(nextTotal, "USD")}, over the ${formatMoney(mandate.max_total_spend, "USD")} cap${priceIncreased ? " after a price increase" : ""}. A human must approve or we can cancel it.`;
+    reason = `A renewal at ${formatMoney(proposedAmount, "USD")} would take monthly software spend to ${formatMoney(intelligence.projected_total, "USD")}, over the ${formatMoney(mandateLimit, "USD")} cap${priceIncreased ? " after a price increase" : ""}. Exceeds mandate by ${formatMoney(intelligence.exceeds_by, "USD")}. A human must approve or we can cancel it.`;
   } else if (priceIncreased && isMaterialShift(subscription.amount, proposedAmount)) {
     decision = "REQUIRE_APPROVAL";
-    reason = `${subscription.plan_name} has a material price increase (${formatMoney(subscription.amount, "USD")} → ${formatMoney(proposedAmount, "USD")}, ≥10%). Material increases require approval.`;
+    reason = `${subscription.plan_name} has a material price increase (${formatMoney(subscription.amount, "USD")} → ${formatMoney(proposedAmount, "USD")}, ${intelligence.percent_change > 0 ? "+" : ""}${intelligence.percent_change}%). Material increases require approval.`;
   } else if (priceIncreased) {
     decision = "REQUIRE_APPROVAL";
     reason = `${subscription.plan_name} increased from ${formatMoney(subscription.amount, "USD")} to ${formatMoney(proposedAmount, "USD")}. Price increases require approval even when the cap still holds.`;
@@ -137,6 +184,7 @@ export function evaluateRenewal(
         recurring: true,
         mandateSpend: others,
         killSwitch: store.settings.kill_switch,
+        now,
       });
       decision = policy.decision;
       reason = policy.reason;
@@ -146,24 +194,54 @@ export function evaluateRenewal(
   const review: RenewalReview = {
     review_id: id("ren"),
     subscription_id: subscription.subscription_id,
+    mandate_id: mandate?.mandate_id,
     proposed_amount: proposedAmount,
     previous_amount: subscription.amount,
     price_increased: priceIncreased,
+    material: isMaterialShift(subscription.amount, proposedAmount),
     decision,
     reason,
     created_at: nowIso(),
+    intelligence,
   };
+
+  if (decision === "REQUIRE_APPROVAL") {
+    const approval = {
+      approval_id: id("appr"),
+      payment_id: "",
+      step_id: "",
+      goal_id: mandate?.goal_id || "",
+      merchant_name: subscription.plan_name,
+      amount: proposedAmount,
+      currency: subscription.currency,
+      reason,
+      status: "pending" as const,
+      created_at: nowIso(),
+      kind: "renewal" as const,
+      review_id: review.review_id,
+      subscription_id: subscription.subscription_id,
+    };
+    store.approvals.push(approval);
+    review.approval_id = approval.approval_id;
+  }
+
   store.renewal_reviews.push(review);
-  if (priceIncreased) recordPriceChange(subscription, proposedAmount, "detected");
-  subscription.status = decision === "ALLOW" ? "active" : "pending_renewal";
-  if (decision === "ALLOW") subscription.lifecycle = "active";
+  if (priceIncreased) recordPriceChange(store, subscription, proposedAmount, "detected");
+  if (decision === "ALLOW") {
+    subscription.status = "active";
+    subscription.lifecycle = "active";
+  } else if (decision === "REQUIRE_APPROVAL") {
+    subscription.status = "pending_renewal";
+  }
   subscription.last_renewal_amount = proposedAmount;
   appendEvent(store, "subscription.renewal_reviewed", `${decision}: ${reason}`, {
     subscription_id: subscription.subscription_id,
     review_id: review.review_id,
+    mandate_id: mandate?.mandate_id,
     decision,
     proposed_amount: proposedAmount,
-    previous_amount: subscription.amount,
+    previous_amount: review.previous_amount,
+    intelligence,
   });
   return review;
 }
@@ -171,9 +249,12 @@ export function evaluateRenewal(
 export async function cancelManagedSubscription(store: StoreData, subscriptionId: string, reason: string) {
   const sub = store.subscriptions.find((s) => s.subscription_id === subscriptionId);
   if (!sub) throw new Error("Subscription not found");
-  if (lifecycleOf(sub) === "ended") return sub;
+  if (lifecycleOf(sub) === "ended") {
+    return { ...sub, paypal_verified_status: "CANCELLED", paypal_mode: "already_ended" as const };
+  }
   const paypalId = sub.paypal_subscription_id || sub.subscription_id;
   const result = await cancelSubscription(paypalId, reason);
+  const verified = await getSubscription(paypalId);
   sub.status = "ended";
   sub.lifecycle = "ended";
   sub.cancelled_at = nowIso();
@@ -181,15 +262,16 @@ export async function cancelManagedSubscription(store: StoreData, subscriptionId
   appendEvent(
     store,
     "subscription.cancelled",
-    `Cancelled ${sub.plan_name} via PayPal Subscriptions API (${result.mode} mode): ${reason}`,
+    `Cancelled ${sub.plan_name} via PayPal Subscriptions API (${result.mode} mode) and verified status ${verified.status}: ${reason}`,
     {
       subscription_id: sub.subscription_id,
       paypal_subscription_id: paypalId,
       mode: result.mode,
       reason,
+      verified_status: verified.status,
     },
   );
-  return sub;
+  return { ...sub, paypal_verified_status: verified.status, paypal_mode: result.mode };
 }
 
 /** Demo webhook payload for a price-increase renewal. Sandbox billing will not fire on cue. */
@@ -250,4 +332,37 @@ export function confirmSuggestedSubscription(store: StoreData, subscriptionId: s
   sub.status = "active";
   appendEvent(store, "subscription.confirmed", `You confirmed ${sub.plan_name}.`, { subscription_id: sub.subscription_id });
   return sub;
+}
+
+
+/** After a human approves a renewal, the new price takes effect. The amount is not changed at review time. */
+export function applyApprovedRenewal(store: StoreData, approvalId: string) {
+  const approval = store.approvals.find((a) => a.approval_id === approvalId);
+  if (!approval || approval.kind !== "renewal") throw new Error("Renewal approval not found");
+  const review = store.renewal_reviews.find((r) => r.review_id === approval.review_id);
+  const sub = store.subscriptions.find((s) => s.subscription_id === approval.subscription_id);
+  if (!review || !sub) throw new Error("Renewal review or subscription not found");
+  sub.amount = review.proposed_amount;
+  sub.status = "active";
+  sub.lifecycle = "active";
+  sub.last_renewal_amount = review.proposed_amount;
+  const rule = (store.recurring_rules || []).find((r) => r.subscription_id === sub.subscription_id);
+  if (rule) {
+    rule.expected_amount = review.proposed_amount;
+    rule.expected_amount_max = Math.max(rule.expected_amount_max, review.proposed_amount);
+  }
+  appendEvent(
+    store,
+    "subscription.renewal_approved",
+    `Human approved the ${sub.plan_name} renewal at ${formatMoney(review.proposed_amount, sub.currency)}. The new price is now in effect.`,
+    {
+      subscription_id: sub.subscription_id,
+      review_id: review.review_id,
+      approval_id: approval.approval_id,
+      previous_amount: review.previous_amount,
+      proposed_amount: review.proposed_amount,
+      intelligence: review.intelligence,
+    },
+  );
+  return { approval, review, subscription: sub };
 }

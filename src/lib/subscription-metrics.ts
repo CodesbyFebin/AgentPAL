@@ -43,3 +43,45 @@ export function makePriceChange(
     material: isMaterialShift(previous, next),
   };
 }
+
+export interface RenewalIntelligence {
+  previous_monthly_price: number;
+  new_monthly_price: number;
+  percent_change: number;
+  monthly_increase: number;
+  annual_increase: number;
+  mandate_limit: number;
+  other_subscriptions_total: number;
+  projected_total: number;
+  exceeds_by: number;
+  currency: string;
+}
+
+export function percentChange(previous: number, next: number): number {
+  if (previous <= 0) return next > 0 ? 100 : 0;
+  return Math.round(((next - previous) / previous) * 1000) / 10;
+}
+
+export function buildRenewalIntelligence(input: {
+  previous: number;
+  next: number;
+  mandateLimit: number;
+  otherSubscriptionsTotal: number;
+  currency?: string;
+}): RenewalIntelligence {
+  const monthly_increase = Math.round((input.next - input.previous) * 100) / 100;
+  const projected_total = Math.round((input.otherSubscriptionsTotal + input.next) * 100) / 100;
+  const exceeds = Math.round((projected_total - input.mandateLimit) * 100) / 100;
+  return {
+    previous_monthly_price: input.previous,
+    new_monthly_price: input.next,
+    percent_change: percentChange(input.previous, input.next),
+    monthly_increase,
+    annual_increase: Math.round(monthly_increase * 12 * 100) / 100,
+    mandate_limit: input.mandateLimit,
+    other_subscriptions_total: input.otherSubscriptionsTotal,
+    projected_total,
+    exceeds_by: Math.max(0, exceeds),
+    currency: input.currency || "USD",
+  };
+}

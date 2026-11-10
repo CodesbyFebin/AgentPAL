@@ -11,6 +11,8 @@ MoneyMate Mesh is one product with two jobs:
 
 Principle: **the AI proposes, the user approves, the backend verifies.**
 
+Sure-inspired intelligence tells the system what is happening, MoneyMate understands what the user can afford, and MeshPaL determines what the AI is allowed to do.
+
 This repository is a hackathon MVP for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (submissions close **12 Nov 2026, 12:00 PM PST** / **13 Nov 2026, 1:30 AM IST**). MoneyMate Mesh is **built on PayPal APIs** and is **not** a PayPal product or endorsement. Do not use PayPal's name or logo in a way that implies affiliation.
 
 ## The problem
@@ -40,7 +42,7 @@ flowchart TD
   Rev -->|unauthorized| Can[PayPal Subscriptions cancel]
 ```
 
-Storage is a single JSON file (`data/moneymate.json`). That is a deliberate hackathon simplification — no Postgres, no Redis, no Docker.
+Storage is a single JSON file (`data/moneymate.json`). That is a deliberate hackathon simplification — no Postgres, no Redis, no Docker. Render's filesystem is ephemeral: if `data/` is empty on boot the store seeds itself automatically, and the **Reset demo** button (or `POST /api/demo/reset`) reseeds it. Anything written to disk is lost when the instance cycles.
 
 ## Demo scenarios
 
@@ -137,7 +139,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### Deploy on Render
 
-This repo includes `render.yaml`. Set the same environment variables, with `APP_URL` equal to your public Render URL.
+This repo includes `render.yaml`. The build command is `npm ci && npm run build`, `NODE_ENV=production`, and the health check is `GET /api/health` (returns `{ ok, paypalMode: "sandbox"|"mock", aiMode: "live"|"offline" }` with no secrets). `npm start` binds to `next start -p ${PORT:-3000}`. Local `npm run dev` stays on port 3000.
+
+Set the same environment variables, with `APP_URL` equal to your public Render URL. A banner at the top of every page says **MOCK PayPal: no real or sandbox money moved** unless both PayPal credentials are set, in which case it shows **PayPal Sandbox**.
 
 ```bash
 npm run build
@@ -157,12 +161,14 @@ Work took place **10–12 November 2026** for the PayPal AI Hackathon. Next.js i
 
 ## Roadmap (not in this MVP)
 
+- CSV import of bank or card transactions
 - Multi-bank connections and real transaction import
+- Investments and portfolio tracking
+- Family / shared permissions
 - Universal subscription discovery across a consumer PayPal account
 - Live x402 / USDC settlement
 - zkVM receipts
 - An agent marketplace
-- Family / shared permissions
 
 ## License
 

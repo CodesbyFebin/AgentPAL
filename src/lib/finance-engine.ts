@@ -314,7 +314,7 @@ export function assessFromFinance(
   amount: number,
   opts: { requestLabel?: string; cheaperAlternativeAmount?: number; cheaperAlternativeSku?: string; asOf?: Date | string } = {},
 ): AffordabilityResult {
-  return assessAffordability({
+  const result = assessAffordability({
     asOf: opts.asOf ?? finance.profile.as_of,
     accounts: finance.accounts,
     bills: finance.bills,
@@ -327,6 +327,7 @@ export function assessFromFinance(
     cheaperAlternativeAmount: opts.cheaperAlternativeAmount,
     cheaperAlternativeSku: opts.cheaperAlternativeSku,
   });
+  return { ...result, cash_flow: monthlyCashFlow(finance) };
 }
 
 export function spentInMonth(
@@ -345,4 +346,43 @@ export function budgetProgress(finance: FinanceState): Array<MonthlyBudget & { s
     const spent = spentInMonth(finance, b.category, b.month);
     return { ...b, spent, remaining: roundMoney(b.monthly_limit - spent) };
   });
+}
+
+
+export interface MonthlyCashFlow {
+  month: string;
+  income: number;
+  expenses: number;
+  transfers: number;
+  net: number;
+  net_worth: number;
+}
+
+export function netWorth(accounts: Pick<BankAccount, "balance">[]): number {
+  return roundMoney(accounts.reduce((s, a) => s + a.balance, 0));
+}
+
+/** Income vs expense for a calendar month. Transfers are excluded from both income and expenses. */
+export function monthlyCashFlow(finance: FinanceState, month?: string): MonthlyCashFlow {
+  const m = month || (finance.profile.as_of || "").slice(0, 7);
+  let income = 0;
+  let expenses = 0;
+  let transfers = 0;
+  for (const t of finance.transactions) {
+    if (t.posted_at.slice(0, 7) !== m) continue;
+    if (t.category === "Transfers") {
+      transfers = roundMoney(transfers + Math.abs(t.amount));
+      continue;
+    }
+    if (t.amount > 0) income = roundMoney(income + t.amount);
+    else expenses = roundMoney(expenses + Math.abs(t.amount));
+  }
+  return {
+    month: m,
+    income,
+    expenses,
+    transfers,
+    net: roundMoney(income - expenses),
+    net_worth: netWorth(finance.accounts),
+  };
 }

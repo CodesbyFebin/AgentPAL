@@ -6,7 +6,7 @@ import type { ColDef, GridReadyEvent, ICellRendererParams, RowClickedEvent } fro
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { formatINR, formatMoney } from "@/lib/money";
-import type { AuditEvent, LedgerTxn, Payment } from "@/lib/types";
+import type { AuditEvent, LedgerTxn, Payment, Receipt } from "@/lib/types";
 
 function csvButton(api: { exportDataAsCsv?: (opts: { fileName: string }) => void } | null, name: string) {
   return (
@@ -34,17 +34,36 @@ function AmountCell(props: ICellRendererParams) {
 export function TransactionsGrid({
   transactions,
   payments,
+  receipts = [],
 }: {
   transactions: LedgerTxn[];
   payments: Payment[];
+  receipts?: Receipt[];
 }) {
   const gridRef = useRef<AgGridReact<LedgerTxn>>(null);
   const [selected, setSelected] = useState<LedgerTxn | null>(null);
   const paymentFor = (txn: LedgerTxn) => payments.find((p) => p.payment_id === txn.payment_id);
+  const policyOf = (p?: Payment) => {
+    if (!p) return "—";
+    if (p.status === "denied") return "DENY";
+    if (p.approval === "human") return "REQUIRE_APPROVAL";
+    if (p.approval === "auto") return "ALLOW";
+    return "—";
+  };
+  const receiptOf = (p?: Payment) => {
+    if (!p) return "—";
+    const rec = receipts.find((r) => r.payments.includes(p.payment_id));
+    return rec?.receipt_id ?? "—";
+  };
 
   const columnDefs = useMemo<ColDef[]>(
     () => [
       { field: "posted_at", headerName: "Posted", width: 190, sort: "desc" },
+      {
+        headerName: "Month",
+        width: 110,
+        valueGetter: (p) => (p.data as LedgerTxn | undefined)?.posted_at?.slice(0, 7) ?? "",
+      },
       { field: "category", headerName: "Category", width: 140 },
       { field: "merchant", headerName: "Merchant", flex: 1, minWidth: 160 },
       { field: "account_id", headerName: "Account", width: 160 },
@@ -61,6 +80,16 @@ export function TransactionsGrid({
         valueGetter: (p) => paymentFor(p.data as LedgerTxn)?.approval ?? (p.data?.source === "seed" ? "demo" : "—"),
       },
       {
+        headerName: "Policy",
+        width: 140,
+        valueGetter: (p) => policyOf(paymentFor(p.data as LedgerTxn)),
+      },
+      {
+        headerName: "Receipt",
+        width: 160,
+        valueGetter: (p) => receiptOf(paymentFor(p.data as LedgerTxn)),
+      },
+      {
         headerName: "Status",
         width: 130,
         valueGetter: (p) => paymentFor(p.data as LedgerTxn)?.status ?? (p.data?.demo ? "seeded" : "posted"),
@@ -72,7 +101,7 @@ export function TransactionsGrid({
       },
       { field: "source", headerName: "Source", width: 130 },
     ],
-    [payments],
+    [payments, receipts],
   );
 
   return (

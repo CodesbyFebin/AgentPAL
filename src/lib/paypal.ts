@@ -235,6 +235,7 @@ export async function cancelSubscription(
 ): Promise<{ mode: "sandbox" | "mock"; subscription_id: string; cancelled: true }> {
   const mode = paypalMode();
   if (mode === "mock") {
+    mockSubscriptionStatus.set(subscriptionId, "CANCELLED");
     return { mode, subscription_id: subscriptionId, cancelled: true };
   }
   await paypalFetch(`/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`, {
@@ -242,4 +243,23 @@ export async function cancelSubscription(
     body: JSON.stringify({ reason: reason.slice(0, 128) }),
   });
   return { mode: "sandbox", subscription_id: subscriptionId, cancelled: true };
+}
+
+
+const mockSubscriptionStatus = new Map<string, string>();
+
+export async function getSubscription(subscriptionId: string): Promise<{
+  mode: "sandbox" | "mock";
+  subscription_id: string;
+  status: string;
+}> {
+  const mode = paypalMode();
+  if (mode === "mock") {
+    const status = mockSubscriptionStatus.get(subscriptionId) || "ACTIVE";
+    return { mode, subscription_id: subscriptionId, status };
+  }
+  const data = (await paypalFetch(`/v1/billing/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+    method: "GET",
+  })) as { id?: string; status?: string };
+  return { mode: "sandbox", subscription_id: data.id || subscriptionId, status: data.status || "UNKNOWN" };
 }

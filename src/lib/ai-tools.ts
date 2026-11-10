@@ -4,6 +4,7 @@ import { assessFromFinance, budgetProgress } from "./finance-engine";
 import { createSignedMandate, executeStep } from "./engine";
 import { id, nowIso } from "./ids";
 import { logAiCall } from "./ai-log";
+import { authorizeTool, levelForTool, parseToolArgs, redactSecrets } from "./ai-permissions";
 import { formatINR } from "./money";
 import { lifecycleOf } from "./subscription-metrics";
 import type { Plan, PlanStep, StoreData } from "./types";
@@ -88,24 +89,70 @@ export function runCoachTool(
   store: StoreData,
   name: string,
   args: Record<string, unknown>,
+  meta: { conversation_id?: string; user_id?: string } = {},
 ): unknown {
   const started = Date.now();
+  const level = levelForTool(name);
+  const loggedLevel = level === "unknown" ? undefined : level;
+  const auth = authorizeTool(name);
+  if (!auth.allowed) {
+    const result = { error: auth.reason, executed: false, level: auth.level };
+    logAiCall(store, {
+      kind: "tool",
+      name,
+      level: auth.level === "unknown" ? undefined : auth.level,
+      latency_ms: Date.now() - started,
+      input_summary: JSON.stringify(args).slice(0, 400),
+      output_summary: JSON.stringify(result).slice(0, 600),
+      ok: false,
+      error: auth.reason,
+      conversation_id: meta.conversation_id,
+      user_id: meta.user_id,
+    });
+    return result;
+  }
+  const parsed = parseToolArgs(name, args);
+  if (!parsed.ok) {
+    const result = { error: parsed.error, executed: false, level };
+    logAiCall(store, {
+      kind: "tool",
+      name,
+      level: loggedLevel,
+      latency_ms: Date.now() - started,
+      input_summary: JSON.stringify(args).slice(0, 400),
+      output_summary: JSON.stringify(result).slice(0, 600),
+      ok: false,
+      error: parsed.error,
+      conversation_id: meta.conversation_id,
+      user_id: meta.user_id,
+    });
+    return result;
+  }
   let ok = true;
   let result: unknown;
   try {
-    result = dispatch(store, name, args);
+    result = dispatch(store, name, parsed.data);
   } catch (err) {
     ok = false;
-    result = { error: err instanceof Error ? err.message : "tool failed" };
+    result = { error: err instanceof Error ? err.message : "tool failed", executed: false, level };
   }
+  const decisionId =
+    name === "propose_payment" && result && typeof result === "object" && "execution" in (result as object)
+      ? ((result as { execution?: { payment?: { policy?: { decision_id?: string } } } }).execution?.payment?.policy?.decision_id)
+      : undefined;
   logAiCall(store, {
     kind: "tool",
     name,
+    level: loggedLevel,
+    validated_args: parsed.data,
+    policy_decision_id: decisionId,
     latency_ms: Date.now() - started,
-    input_summary: JSON.stringify(args).slice(0, 400),
-    output_summary: JSON.stringify(result).slice(0, 600),
+    input_summary: redactSecrets(JSON.stringify(parsed.data).slice(0, 400)),
+    output_summary: redactSecrets(JSON.stringify(result).slice(0, 600)),
     ok,
     error: ok ? undefined : String((result as { error?: string }).error),
+    conversation_id: meta.conversation_id,
+    user_id: meta.user_id,
   });
   return result;
 }

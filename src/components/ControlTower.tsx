@@ -39,7 +39,7 @@ interface State {
   modes: {
     planner: { planner: "offline" | "ai"; model?: string };
     paypal: "sandbox" | "mock";
-    paypalClientId: string | null;
+    webhook?: string;
   };
 }
 

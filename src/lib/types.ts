@@ -206,6 +206,9 @@ export interface Approval {
   status: ApprovalStatus;
   created_at: string;
   resolved_at?: string;
+  kind?: "payment" | "renewal";
+  review_id?: string;
+  subscription_id?: string;
 }
 
 export interface Receipt {
@@ -370,6 +373,14 @@ export interface AffordabilityResult {
   alternatives: AffordabilityAlternative[];
   goal_impacts: GoalContributionPause[];
   fx: { inr: number; usd: number; rate: number; label: string };
+  cash_flow?: {
+    month: string;
+    income: number;
+    expenses: number;
+    transfers: number;
+    net: number;
+    net_worth: number;
+  };
 }
 
 export interface FinanceState {
@@ -438,16 +449,32 @@ export interface ManagedSubscription {
   cancel_reason?: string;
 }
 
+export interface RenewalIntelligence {
+  previous_monthly_price: number;
+  new_monthly_price: number;
+  percent_change: number;
+  monthly_increase: number;
+  annual_increase: number;
+  mandate_limit: number;
+  other_subscriptions_total: number;
+  projected_total: number;
+  exceeds_by: number;
+  currency: string;
+}
+
 export interface RenewalReview {
   review_id: string;
   subscription_id: string;
+  mandate_id?: string;
   proposed_amount: number;
   previous_amount: number;
   price_increased: boolean;
+  material: boolean;
   decision: PolicyDecisionType;
   reason: string;
   approval_id?: string;
   created_at: string;
+  intelligence: RenewalIntelligence;
 }
 
 export interface SpendReservation {
@@ -461,11 +488,14 @@ export interface SpendReservation {
   created_at: string;
 }
 
+export type AiPermissionLevel = "L1" | "L2" | "L3";
+
 export interface AiCallLog {
   call_id: string;
   kind: "llm" | "tool";
   name: string;
   model?: string;
+  provider?: string;
   at: string;
   latency_ms: number;
   prompt_tokens?: number;
@@ -474,6 +504,63 @@ export interface AiCallLog {
   output_summary: string;
   ok: boolean;
   error?: string;
+  conversation_id?: string;
+  user_id?: string;
+  level?: AiPermissionLevel;
+  validated_args?: Record<string, unknown>;
+  policy_decision_id?: string;
+}
+
+
+export interface SubscriptionPriceHistoryRow {
+  history_id: string;
+  subscription_id: string;
+  old_price: number;
+  new_price: number;
+  changed_at: string;
+  source: PriceChangeSource;
+  material: boolean;
+  currency: Currency;
+}
+
+export interface RecurringRule {
+  rule_id: string;
+  subscription_id?: string;
+  frequency: "monthly";
+  expected_amount: number;
+  expected_amount_min: number;
+  expected_amount_max: number;
+  category: string;
+  bill_type: BillType;
+}
+
+export interface MerchantProfile {
+  merchant_profile_id: string;
+  merchant_id?: string;
+  name: string;
+  normalized_name: string;
+  aliases: string[];
+  category?: string;
+  risk_flags: string[];
+}
+
+export interface CategoryRecord {
+  category_id: string;
+  name: string;
+  parent_id?: string;
+  type: "income" | "expense" | "transfer" | "subscription";
+}
+
+export interface FinancialSnapshot {
+  snapshot_id: string;
+  date: string;
+  month: string;
+  balances: number;
+  income: number;
+  expenses: number;
+  transfers: number;
+  net_worth: number;
+  currency: Currency;
 }
 
 export interface Settings {
@@ -501,5 +588,11 @@ export interface StoreData {
   renewal_reviews: RenewalReview[];
   reservations: SpendReservation[];
   ai_calls: AiCallLog[];
+  subscription_price_history: SubscriptionPriceHistoryRow[];
+  recurring_rules: RecurringRule[];
+  merchant_directory: MerchantProfile[];
+  categories: CategoryRecord[];
+  ai_tool_logs: AiCallLog[];
+  financial_snapshots: FinancialSnapshot[];
   settings: Settings;
 }

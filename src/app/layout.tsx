@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Sora, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
+import { ModeBanner } from "@/components/ModeBanner";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -23,7 +24,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${sora.variable} ${sourceSans.variable}`}>
-      <body className="mesh-bg font-sans antialiased">{children}</body>
+      <body className="mesh-bg font-sans antialiased">
+        <ModeBanner
+          paypalMode={process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET ? "sandbox" : "mock"}
+        />
+        {children}
+      </body>
     </html>
   );
 }
