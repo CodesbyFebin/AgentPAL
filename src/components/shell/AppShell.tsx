@@ -171,13 +171,14 @@ export function AppShell({
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
-            className="mm-focus flex min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--mm-border)] bg-[var(--mm-surface)] px-4 py-2 text-left text-sm text-[var(--mm-muted)] shadow-sm"
+            aria-label="Open command bar"
+            className="mm-focus flex items-center gap-2 rounded-full border border-[var(--mm-border)] bg-[var(--mm-surface)] p-2 text-left text-sm text-[var(--mm-muted)] shadow-sm sm:min-w-0 sm:flex-1 sm:px-4 sm:py-2"
           >
             <Search size={16} />
-            <span className="truncate">Search anything…</span>
+            <span className="hidden truncate sm:inline">Search anything…</span>
             <kbd className="ml-auto hidden rounded border border-[var(--mm-border)] px-1.5 py-0.5 text-[10px] sm:inline">Ctrl + K</kbd>
           </button>
-          <Badge tone={pay.tone}>{pay.label}</Badge>
+          <span className="hidden sm:inline-flex"><Badge tone={pay.tone}>{pay.label}</Badge></span>
           {state.settings.kill_switch && <Badge tone="danger">Kill switch</Badge>}
           <button type="button" className="mm-focus relative rounded-full p-2" aria-label="Approvals" onClick={() => setApprovalsOpen(true)}>
             <Bell size={18} />
