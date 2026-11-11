@@ -81,7 +81,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
         } catch {
           args = {};
         }
-        const out = runCoachTool(store, name, args);
+        const out = await runCoachTool(store, name, args);
         messages.push({
           role: "tool",
           tool_call_id: call.id,
