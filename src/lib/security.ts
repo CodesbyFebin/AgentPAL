@@ -29,20 +29,30 @@ export function rbacDecision(method: string, pathname: string, role: Role): { al
 /** Route groups that move or could move money get a tighter limit. */
 export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; windowMs: number }> = [
   { group: "payments", match: /^\/api\/(payments|paypal\/orders|refunds|purchases|pay-links\/[^/]+\/pay|steps\/[^/]+\/execute)/, limit: 20, windowMs: 60_000 },
+  { group: "role", match: /^\/api\/security\/role$/, limit: 10, windowMs: 60_000 },
   { group: "paypal-tools", match: /^\/api\/(coach\/paypal-tools|invoices|paypal-plans|paypal-subscriptions)/, limit: 30, windowMs: 60_000 },
 ];
 
+const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+const IPV6 = /^[0-9a-f:]{2,39}$/i;
+export function isValidIp(v: string): boolean {
+  return IPV4.test(v) || (v.includes(":") && IPV6.test(v));
+}
+
 /**
- * Client key for rate limiting. Render (behind Cloudflare) sets True-Client-IP, which the client cannot
- * override; otherwise we use the RIGHTMOST X-Forwarded-For entry (appended by the last proxy), never the
- * leftmost one, which the client controls.
+ * Client key for rate limiting.
+ * 1. True-Client-IP — set by Render's edge (Cloudflare) and overwritten there, so the client can't spoof it.
+ * 2. Else the LEFTMOST *valid IP* in X-Forwarded-For. Render's proxy appends the real client address, so
+ *    the rightmost hop is an internal proxy and would put every user in one bucket. Trade-off: if neither
+ *    edge header is trustworthy, a client can prepend a fake leftmost IP to get a fresh bucket; on Render
+ *    True-Client-IP is present, so that fallback is only used locally / behind other proxies.
  */
 export function clientKey(headers: { get(name: string): string | null }): string {
   const trueIp = headers.get("true-client-ip")?.trim();
-  if (trueIp) return trueIp;
+  if (trueIp && isValidIp(trueIp)) return trueIp;
   const xff = headers.get("x-forwarded-for");
-  const parts = xff ? xff.split(",").map((p) => p.trim()).filter(Boolean) : [];
-  return parts.at(-1) || "local";
+  const first = xff?.split(",").map((p) => p.trim()).find((p) => isValidIp(p));
+  return first || "local";
 }
 
 export class RateLimiter {

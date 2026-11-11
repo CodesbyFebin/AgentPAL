@@ -72,7 +72,7 @@ export async function runBuySafelyScenario() {
 
     const mandate = createSignedMandate(store, {
       goal_id: goal.goal_id,
-      title: "Startup tools under $50",
+      title: "Demo: Startup tools under $50",
       max_total_spend: 50,
       per_tx_limit: 10,
       approved_merchants: ["merchant_001", "merchant_002"],
@@ -158,7 +158,7 @@ export async function runMaliciousScenario() {
 
     const mandate = createSignedMandate(store, {
       goal_id: goal.goal_id,
-      title: "Startup tools under $50",
+      title: "Demo: Startup tools under $50",
       max_total_spend: 50,
       per_tx_limit: 10,
       approved_merchants: ["merchant_001", "merchant_002", "merchant_evil"],
@@ -253,7 +253,7 @@ export async function runSubscriptionScenario() {
 
     const mandate = createSignedMandate(store, {
       goal_id: goal.goal_id,
-      title: "Software subscriptions ≤ $30/month",
+      title: "Demo: Software subscriptions ≤ $30/month",
       max_total_spend: 30,
       per_tx_limit: 30,
       approved_merchants: ["merchant_clouddraw", "merchant_logsense", "merchant_stackmail"],

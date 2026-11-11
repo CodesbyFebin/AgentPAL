@@ -27,6 +27,8 @@ services:
         sync: false
       - key: OWNER_PIN
         sync: false
+      - key: OWNER_SESSION_SECRET
+        sync: false
       - key: APP_URL
         sync: false
       - key: BRAINTREE_MERCHANT_ID

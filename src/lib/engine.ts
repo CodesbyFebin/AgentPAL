@@ -660,6 +660,7 @@ export async function runDemoScenario() {
     });
 
     const mandate = createSignedMandate(store, {
+      title: "Demo: Startup tools under $50 (one-click run)",
       goal_id: goal.goal_id,
       max_total_spend: 50,
       auto_approve_limit: 10,

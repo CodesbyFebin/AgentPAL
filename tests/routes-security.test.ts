@@ -10,6 +10,12 @@ import { POST as rolePOST } from "@/app/api/security/role/route";
 import { POST as killPOST } from "@/app/api/kill-switch/route";
 import { POST as signPOST } from "@/app/api/mandates/sign/route";
 import { POST as approvalsPOST } from "@/app/api/purchases/approvals/route";
+import { POST as plansPOST } from "@/app/api/plans/route";
+import { POST as demoRunPOST } from "@/app/api/demo/run/route";
+import { GET as roleGET } from "@/app/api/security/role/route";
+import { runScenario } from "@/lib/scenarios";
+import { issueOwnerCookie, resolveRole, roleMode, OWNER_SESSION_TTL_MS } from "@/lib/owner-session";
+import { checkSecurityHeaders, computeSecurityHealth, rbacHealthCheck } from "@/lib/security-health";
 import { middleware } from "@/middleware";
 import { createSignedMandate } from "@/lib/engine";
 import { clientKey } from "@/lib/security";
@@ -21,14 +27,25 @@ const json = (url: string, body: unknown, headers: Record<string, string> = {}) 
   new Request(`http://localhost${url}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 const OWNER_DEMO = { cookie: `agentpal_role=${DEMO_OWNER_VALUE}` };
 
-const savedPin = process.env.OWNER_PIN;
+const PIN = "correct-horse-4821";
+const SECRET = "s".repeat(16) + "e".repeat(16) + "-session-secret";
+const saved = { pin: process.env.OWNER_PIN, secret: process.env.OWNER_SESSION_SECRET };
+const pinMode = () => {
+  process.env.OWNER_PIN = PIN;
+  process.env.OWNER_SESSION_SECRET = SECRET;
+};
+let ipSeq = 0;
+const freshIp = () => `203.0.113.${++ipSeq}`;
 beforeEach(() => {
   resetStore();
   delete process.env.OWNER_PIN;
+  delete process.env.OWNER_SESSION_SECRET;
 });
 afterEach(() => {
-  if (savedPin === undefined) delete process.env.OWNER_PIN;
-  else process.env.OWNER_PIN = savedPin;
+  for (const [k, v] of [["OWNER_PIN", saved.pin], ["OWNER_SESSION_SECRET", saved.secret]] as const) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
 });
 
 /** Mandate allowing only the "domain" category, for both demo merchants. */
@@ -81,17 +98,24 @@ describe("/api/policy/evaluate", () => {
 });
 
 describe("/api/subscriptions/replay", () => {
-  it("rejects NaN, Infinity, strings and non-positive proposed_amount", async () => {
+  it("with a seeded managed subscription: rejects NaN/Infinity/strings/<=0 at the amount guard; accepts a valid amount", async () => {
+    await runScenario("subscriptions");
+    const sub = readStore().subscriptions.find((s) => s.merchant_id === "merchant_clouddraw")!;
+    expect(sub).toBeTruthy();
     for (const proposed_amount of ["NaN", "1e999", "abc", 0, -3, null]) {
-      const r = await replayPOST(json("/api/subscriptions/replay", { proposed_amount }));
+      const r = await replayPOST(json("/api/subscriptions/replay", { subscription_id: sub.subscription_id, proposed_amount }));
       expect(r.status, String(proposed_amount)).toBe(400);
+      expect(((await r.json()) as { error: string }).error).toMatch(/proposed_amount must be a finite number/);
     }
+    const good = await replayPOST(json("/api/subscriptions/replay", { subscription_id: sub.subscription_id, proposed_amount: 16 }));
+    expect(good.status).toBeLessThan(300);
   });
 });
 
 describe("RBAC", () => {
-  const mw = (path: string, cookie?: string) =>
-    middleware(new NextRequest(`http://localhost${path}`, { method: "POST", headers: cookie ? { cookie } : {} }));
+  const mw = (path: string, cookie?: string, ip = freshIp()) =>
+    middleware(new NextRequest(`http://localhost${path}`, { method: "POST", headers: { "true-client-ip": ip, ...(cookie ? { cookie } : {}) } }));
+  const roleReq = (body: unknown, ip: string) => json("/api/security/role", body, { "true-client-ip": ip });
 
   it("no cookie defaults to viewer: mutating /api calls get 403", async () => {
     const r = mw("/api/refunds");
@@ -109,12 +133,13 @@ describe("RBAC", () => {
     expect(mw("/api/refunds", OWNER_DEMO.cookie).status).toBe(200);
   });
   it("PIN mode: self-promotion without / with a wrong PIN is blocked; the right PIN issues a signed session", async () => {
-    process.env.OWNER_PIN = "4821-test";
-    expect((await rolePOST(json("/api/security/role", { role: "owner" }))).status).toBe(403);
-    expect((await rolePOST(json("/api/security/role", { role: "owner", pin: "0000" }))).status).toBe(403);
+    pinMode();
+    const ip = freshIp();
+    expect((await rolePOST(roleReq({ role: "owner" }, ip))).status).toBe(403);
+    expect((await rolePOST(roleReq({ role: "owner", pin: "0000" }, ip))).status).toBe(403);
     expect(mw("/api/refunds", OWNER_DEMO.cookie).status).toBe(403); // demo cookie is worthless in PIN mode
     expect(mw("/api/refunds", `agentpal_role=o.${Date.now() + 60_000}.forged`).status).toBe(403);
-    const good = await rolePOST(json("/api/security/role", { role: "owner", pin: "4821-test" }));
+    const good = await rolePOST(roleReq({ role: "owner", pin: PIN }, ip));
     expect(good.status).toBe(200);
     const value = /agentpal_role=([^;]+)/.exec(good.headers.get("set-cookie") || "")![1];
     expect(mw("/api/refunds", `agentpal_role=${value}`).status).toBe(200);
@@ -134,14 +159,107 @@ describe("RBAC", () => {
 });
 
 describe("rate-limit client key and FX", () => {
-  it("prefers True-Client-IP, else the rightmost X-Forwarded-For entry (not the spoofable leftmost)", () => {
+  it("prefers True-Client-IP, else the leftmost VALID X-Forwarded-For IP (Render appends internal hops)", () => {
     const h = (o: Record<string, string>) => new Headers(o);
-    expect(clientKey(h({ "true-client-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 2.2.2.2" }))).toBe("1.1.1.1");
-    expect(clientKey(h({ "x-forwarded-for": "9.9.9.9, 2.2.2.2" }))).toBe("2.2.2.2");
+    expect(clientKey(h({ "true-client-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 10.0.0.2" }))).toBe("1.1.1.1");
+    expect(clientKey(h({ "x-forwarded-for": "9.9.9.9, 10.0.0.2" }))).toBe("9.9.9.9");
+    expect(clientKey(h({ "x-forwarded-for": "garbage, 9.9.9.9" }))).toBe("9.9.9.9");
+    expect(clientKey(h({ "true-client-ip": "not-an-ip" }))).toBe("local");
     expect(clientKey(h({}))).toBe("local");
   });
   it("rejects unsupported currencies instead of treating them as USD", () => {
     expect(toUsd(830, "INR")).toBe(10);
     expect(() => toUsd(10, "EUR")).toThrow(/Unsupported currency/);
+  });
+});
+
+describe("owner sessions and PIN hardening", () => {
+  it("owner cookies expire after the TTL and far-future expiries are refused", () => {
+    pinMode();
+    const now = Date.now();
+    const fresh = issueOwnerCookie(PIN, process.env, now)!;
+    expect(resolveRole(`agentpal_role=${fresh}`, process.env, now + 1000).role).toBe("owner");
+    expect(resolveRole(`agentpal_role=${fresh}`, process.env, now + OWNER_SESSION_TTL_MS + 1).role).toBe("viewer");
+    const stale = issueOwnerCookie(PIN, process.env, now - 9 * 60 * 60 * 1000)!;
+    expect(resolveRole(`agentpal_role=${stale}`).role).toBe("viewer");
+  });
+  it("a cookie signed with the PIN instead of OWNER_SESSION_SECRET is rejected", async () => {
+    pinMode();
+    const { createHmac } = await import("crypto");
+    const exp = Date.now() + 60_000;
+    const sig = createHmac("sha256", PIN).update(`agentpal-owner:${exp}`).digest("base64url");
+    expect(resolveRole(`agentpal_role=o.${exp}.${sig}`).role).toBe("viewer");
+  });
+  it("OWNER_PIN shorter than 12 characters is rejected (demo toggle), and says so", async () => {
+    process.env.OWNER_PIN = "short-pin";
+    process.env.OWNER_SESSION_SECRET = SECRET;
+    expect(roleMode()).toBe("demo_toggle");
+    const r = (await (await roleGET(new Request("http://localhost/api/security/role"))).json()) as { mode: string; note: string };
+    expect(r.mode).toBe("demo_toggle");
+    expect(r.note).toMatch(/shorter than 12/);
+  });
+  it("PIN without OWNER_SESSION_SECRET fails closed: even the right PIN cannot become owner", async () => {
+    process.env.OWNER_PIN = PIN;
+    expect(roleMode()).toBe("pin_misconfigured");
+    const r = await rolePOST(json("/api/security/role", { role: "owner", pin: PIN }, { "true-client-ip": freshIp() }));
+    expect(r.status).toBe(503);
+    expect(r.headers.get("set-cookie") || "").not.toContain("o.");
+    expect(resolveRole("agentpal_role=demo-owner").role).toBe("viewer");
+  });
+  it("locks a client out after 5 wrong PINs; even the right PIN is then refused (429)", async () => {
+    pinMode();
+    const ip = freshIp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) statuses.push((await rolePOST(json("/api/security/role", { role: "owner", pin: `wrong-${i}` }, { "true-client-ip": ip }))).status);
+    expect(statuses).toEqual([403, 403, 403, 403, 429]);
+    const right = await rolePOST(json("/api/security/role", { role: "owner", pin: PIN }, { "true-client-ip": ip }));
+    expect(right.status).toBe(429);
+    // another client is unaffected
+    expect((await rolePOST(json("/api/security/role", { role: "owner", pin: PIN }, { "true-client-ip": freshIp() }))).status).toBe(200);
+  });
+  it("middleware rate-limits the role endpoint (10/min per client)", () => {
+    const ip = freshIp();
+    const codes = Array.from({ length: 11 }, () =>
+      middleware(new NextRequest("http://localhost/api/security/role", { method: "POST", headers: { "true-client-ip": ip } })).status,
+    );
+    expect(codes.slice(0, 10).every((c) => c === 200)).toBe(true);
+    expect(codes[10]).toBe(429);
+  });
+});
+
+describe("other owner-only / explicit-input routes", () => {
+  it("/api/plans requires an explicit goal_id (no latest-goal fallback)", async () => {
+    await runScenario("buy-safely");
+    const r = await plansPOST(json("/api/plans", {}));
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as { error: string }).error).toMatch(/goal_id is required/);
+  });
+  it("/api/demo/run is owner-only at the route level", async () => {
+    expect((await demoRunPOST(json("/api/demo/run", { scenario: "buy-safely" }))).status).toBe(403);
+    expect(readStore().mandates.length).toBe(0);
+    const ok = await demoRunPOST(json("/api/demo/run", { scenario: "buy-safely" }, OWNER_DEMO));
+    expect(ok.status).toBe(201);
+    expect(readStore().mandates.every((m) => (m.title || "").startsWith("Demo:"))).toBe(true);
+  });
+});
+
+describe("security health score honesty", () => {
+  it("header check reads next.config and passes", async () => {
+    expect(await checkSecurityHeaders()).toEqual({ ok: true, missing: [] });
+  });
+  it("demo-toggle mode: RBAC is a FAILED, weighted check and 100 is unreachable", async () => {
+    const c = rbacHealthCheck();
+    expect(c.passed).toBe(false);
+    expect(c.weight).toBeGreaterThan(0);
+    const h = await computeSecurityHealth(readStore());
+    const rbac = h.checks.find((x) => x.id === "rbac")!;
+    expect(rbac.passed).toBe(false);
+    expect(h.score).toBeLessThan(100);
+  });
+  it("misconfigured PIN mode also fails; full PIN mode passes", () => {
+    process.env.OWNER_PIN = PIN;
+    expect(rbacHealthCheck().passed).toBe(false);
+    pinMode();
+    expect(rbacHealthCheck().passed).toBe(true);
   });
 });

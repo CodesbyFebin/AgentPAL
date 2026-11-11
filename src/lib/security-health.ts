@@ -4,7 +4,7 @@ import { hasBraintreeCreds } from "./payment-mode";
 import { paypalMode } from "./store";
 import type { StoreData } from "./types";
 import nextConfig from "../../next.config";
-import { DEMO_OWNER_VALUE, issueOwnerCookie, resolveRole, roleMode } from "./owner-session";
+import { DEMO_OWNER_VALUE, issueOwnerCookie, resolveRole, roleConfigNote, roleMode } from "./owner-session";
 import { RateLimiter, rateLimitGroup, rbacDecision, ROLE_COOKIE } from "./security";
 
 /** Reads the headers actually registered in next.config.ts and checks the ones we rely on. */
@@ -29,6 +29,8 @@ export function checkRbac(env: NodeJS.ProcessEnv = process.env): { ok: boolean; 
   if (roleMode(env) === "pin") {
     if (resolveRole(`${ROLE_COOKIE}=${DEMO_OWNER_VALUE}`, env).role !== "viewer") failures.push("demo cookie accepted in PIN mode");
     if (resolveRole(`${ROLE_COOKIE}=o.${Date.now() + 60_000}.forged`, env).role !== "viewer") failures.push("forged token accepted");
+    const issued = issueOwnerCookie(env.OWNER_PIN, env, Date.now() - 9 * 60 * 60 * 1000);
+    if (!issued || resolveRole(`${ROLE_COOKIE}=${issued}`, env).role !== "viewer") failures.push("expired session accepted");
     if (issueOwnerCookie("wrong-pin", env) !== null) failures.push("wrong PIN issued a session");
   }
   if (rbacDecision("POST", "/api/refunds", "viewer").allowed) failures.push("viewer allowed to POST /api/refunds");
@@ -56,7 +58,27 @@ export interface HealthCheck {
 }
 
 /** Security score computed only from real, checkable facts about this deployment. */
-export async function computeSecurityHealth(store: StoreData): Promise<{ score: number; grade: string; checks: HealthCheck[]; excluded: HealthCheck[] }> {
+/**
+ * RBAC counts in the score and only passes with real access control (PIN + session secret) whose
+ * resolver behaves correctly right now. Demo-toggle or fail-closed configs are FAILED checks, so 100/100
+ * is unreachable without real RBAC.
+ */
+export function rbacHealthCheck(env: NodeJS.ProcessEnv = process.env): HealthCheck {
+  const rbac = checkRbac(env);
+  const mode = roleMode(env);
+  return {
+    id: "rbac",
+    label: "RBAC: default viewer, owner needs server-side PIN + signed session (exercised now)",
+    passed: mode === "pin" && rbac.ok,
+    weight: 10,
+    detail:
+      mode === "pin"
+        ? rbac.ok ? "No cookie → viewer; forged, demo and expired cookies → viewer; wrong PIN refused." : `Failed: ${rbac.detail}`
+        : `${roleConfigNote(env)} The role switch is not real access control, so this check fails.`,
+  };
+}
+
+export async function computeSecurityHealth(store: StoreData): Promise<{ score: number; grade: string; checks: HealthCheck[] }> {
   const chain = verifyAuditChain(store.events);
   const secrets = envSecretValues();
   const publicEnv = Object.entries(process.env).filter(([k]) => k.startsWith("NEXT_PUBLIC_"));
@@ -123,23 +145,10 @@ export async function computeSecurityHealth(store: StoreData): Promise<{ score: 
   });
   const limiter = checkRateLimiter();
   checks.push({ id: "rate_limit", label: "Rate limiter blocks at the configured limit (exercised now)", passed: limiter.ok, weight: 5, detail: limiter.detail });
-  const rbac = checkRbac();
-  const rbacCheck: HealthCheck = {
-    id: "rbac",
-    label: "RBAC: default viewer, owner needs server-side PIN (exercised now)",
-    passed: rbac.ok && roleMode() === "pin",
-    weight: 5,
-    detail:
-      roleMode() === "pin"
-        ? rbac.ok ? "No cookie → viewer; forged cookies → viewer; wrong PIN refused." : `Failed: ${rbac.detail}`
-        : "OWNER_PIN is not set, so the role switch is a demo role toggle. Excluded from the score.",
-  };
-  const excluded: HealthCheck[] = [];
-  if (roleMode() === "pin") checks.push(rbacCheck);
-  else excluded.push({ ...rbacCheck, passed: rbac.ok, weight: 0 });
+  checks.push(rbacHealthCheck());
   const total = checks.reduce((s, c) => s + c.weight, 0);
   const got = checks.filter((c) => c.passed).reduce((s, c) => s + c.weight, 0);
   const score = Math.round((got / total) * 100);
   const grade = score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : "D";
-  return { score, grade, checks, excluded };
+  return { score, grade, checks };
 }

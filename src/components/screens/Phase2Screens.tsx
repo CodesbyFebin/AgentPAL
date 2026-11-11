@@ -267,7 +267,7 @@ export function InvoicesScreen({ state, run }: ScreenProps) {
 /* ------------------------------ Security Center ------------------------------ */
 
 type HealthCheckRow = { id: string; label: string; passed: boolean; weight: number; detail: string };
-type HealthData = { score: number; grade: string; role: "owner" | "viewer"; role_mode: "pin" | "demo_toggle"; checks: HealthCheckRow[]; excluded?: HealthCheckRow[] };
+type HealthData = { score: number; grade: string; role: "owner" | "viewer"; role_mode: "pin" | "pin_misconfigured" | "demo_toggle"; checks: HealthCheckRow[] };
 
 export function SecurityScreen({ run }: ScreenProps) {
   const health = useApi<HealthData>("/api/security/health");
@@ -299,8 +299,10 @@ export function SecurityScreen({ run }: ScreenProps) {
           <p className="mt-1 text-xs text-[var(--mm-muted)]">
             Everyone starts as a viewer: you can read everything and engage the kill switch, and every other POST returns 403.{" "}
             {demoToggle
-              ? "OWNER_PIN is not set on this server, so anyone can switch to owner here. That's why RBAC is excluded from the score."
-              : "Becoming owner takes the server-side OWNER_PIN and gives you a signed 8-hour session cookie."}
+              ? "OWNER_PIN (12+ characters) is not set on this server, so anyone can switch to owner here. The RBAC check counts as failed in the score."
+              : h?.role_mode === "pin_misconfigured"
+                ? "OWNER_SESSION_SECRET is missing, so owner sign-in is disabled (fail closed)."
+                : "Becoming owner takes the server-side OWNER_PIN. After 5 wrong tries you're locked out for 15 minutes. You get a signed 8-hour session cookie."}
           </p>
           {!demoToggle && h?.role !== "owner" && (
             <input
@@ -334,15 +336,6 @@ export function SecurityScreen({ run }: ScreenProps) {
                 <p className="text-xs text-[var(--mm-muted)]">{c.detail}</p>
               </div>
               <Badge tone={c.passed ? "success" : "warning"}>{c.passed ? `pass · ${c.weight}` : `open · 0/${c.weight}`}</Badge>
-            </li>
-          ))}
-          {h?.excluded?.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-dashed border-[var(--mm-border)] p-2 text-sm opacity-80">
-              <div>
-                <p className="font-medium">{c.label}</p>
-                <p className="text-xs text-[var(--mm-muted)]">{c.detail}</p>
-              </div>
-              <Badge tone="neutral">excluded from score</Badge>
             </li>
           ))}
         </ul>
