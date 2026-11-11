@@ -16,6 +16,11 @@ import type { SettlementStep } from "@/lib/settlement";
 import type { PaymentMode } from "@/lib/payment-mode";
 
 export type PageId =
+  | "command"
+  | "money-os"
+  | "agent-mesh"
+  | "hardening"
+  | "analytics"
   | "dashboard"
   | "transactions"
   | "subscriptions"
@@ -33,7 +38,12 @@ export type PageId =
   | "settings";
 
 export const PAGES: { id: PageId; label: string; group?: string }[] = [
-  { id: "dashboard", label: "Dashboard" },
+  { id: "command", label: "Command Center" },
+  { id: "money-os", label: "Money OS" },
+  { id: "agent-mesh", label: "AI Agent Mesh" },
+  { id: "hardening", label: "Hardening" },
+  { id: "analytics", label: "Analytics" },
+  { id: "dashboard", label: "Finance Dashboard" },
   { id: "transactions", label: "Transactions" },
   { id: "subscriptions", label: "Subscriptions" },
   { id: "budgets", label: "Budgets" },

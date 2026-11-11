@@ -3,7 +3,8 @@ import { sha256Hex } from "./crypto";
 import { canonicalJson, nowIso } from "./ids";
 import { readStore, updateStore } from "./store";
 
-const inflight = new Map<string, Promise<{ status: number; body: unknown }>>();
+type Result = { status: number; body: unknown };
+const inflight = new Map<string, { hash: string; result: Promise<Result> }>();
 
 export const IDEMPOTENCY_HEADER = "idempotency-key";
 
@@ -32,30 +33,35 @@ export async function withIdempotency(
     }
     return NextResponse.json(prior.body, { status: prior.status, headers: { "Idempotent-Replayed": "true" } });
   }
-  const flightKey = `${scope}:${key}`;
+  const flightKey = JSON.stringify([scope, key]);
   const running = inflight.get(flightKey);
   if (running) {
-    const r = await running;
+    if (running.hash !== request_hash) {
+      return NextResponse.json({ error: "Idempotency-Key was already used with a different request" }, { status: 409 });
+    }
+    const r = await running.result;
     return NextResponse.json(r.body, { status: r.status, headers: { "Idempotent-Replayed": "true" } });
   }
-  const p = handler();
-  inflight.set(flightKey, p);
-  let r: { status: number; body: unknown };
+  const result = Promise.resolve().then(async () => {
+    const r = await handler();
+    // Hold the in-flight slot until the replay record has been persisted.
+    if (r.status < 500) {
+      await updateStore((store) => {
+        if (!store.idempotency_responses.some((x) => x.key === key && x.scope === scope)) {
+          store.idempotency_responses.push({ key, scope, request_hash, status: r.status, body: r.body, created_at: nowIso() });
+          if (store.idempotency_responses.length > 500) store.idempotency_responses.splice(0, store.idempotency_responses.length - 500);
+        }
+      });
+    }
+    return r;
+  });
+  inflight.set(flightKey, { hash: request_hash, result });
   try {
-    r = await p;
+    const r = await result;
+    return NextResponse.json(r.body, { status: r.status });
   } finally {
     inflight.delete(flightKey);
   }
-  // Only successful or deterministic client errors are cached; 5xx can be retried.
-  if (r.status < 500) {
-    await updateStore((store) => {
-      if (!store.idempotency_responses.some((x) => x.key === key && x.scope === scope)) {
-        store.idempotency_responses.push({ key, scope, request_hash, status: r.status, body: r.body, created_at: nowIso() });
-        if (store.idempotency_responses.length > 500) store.idempotency_responses.splice(0, store.idempotency_responses.length - 500);
-      }
-    });
-  }
-  return NextResponse.json(r.body, { status: r.status });
 }
 
 function lookup(key: string, scope: string) {

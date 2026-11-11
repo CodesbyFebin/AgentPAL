@@ -34,6 +34,11 @@ import { ACCENT_THEMES, type AccentThemeId, type Appearance } from "@/lib/ui-the
 import { SPACE_META, SPACES, type MoneySpace } from "@/lib/spaces";
 
 const ICONS: Record<PageId, typeof LayoutDashboard> = {
+  command: LayoutDashboard,
+  "money-os": Wallet,
+  "agent-mesh": Bot,
+  hardening: ShieldCheck,
+  analytics: LineChart,
   dashboard: LayoutDashboard,
   transactions: ArrowLeftRight,
   subscriptions: Repeat,
@@ -51,7 +56,7 @@ const ICONS: Record<PageId, typeof LayoutDashboard> = {
   settings: Settings,
 };
 
-const MOBILE_PRIMARY: PageId[] = ["dashboard", "coach", "agents", "vault"];
+const MOBILE_PRIMARY: PageId[] = ["command", "money-os", "agent-mesh", "hardening"];
 
 export type CommandItem = {
   id: string;

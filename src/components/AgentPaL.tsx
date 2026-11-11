@@ -1,5 +1,7 @@
 "use client";
 
+import { CommandCenter } from "@/components/screens/CommandCenter";
+import { OwnerAccess } from "@/components/OwnerAccess";
 import { DeveloperScreen, InvoicesScreen, RefundsScreen, SecurityScreen } from "@/components/screens/Phase2Screens";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
@@ -71,11 +73,11 @@ function readSearch(): {
   approvalsOpen: boolean;
 } {
   if (typeof window === "undefined") {
-    return { tab: "dashboard", appearance: null, theme: null, space: null, zenDemo: false, approvalsOpen: false };
+    return { tab: "command", appearance: null, theme: null, space: null, zenDemo: false, approvalsOpen: false };
   }
   const params = new URLSearchParams(window.location.search);
   const rawTab = params.get("tab");
-  const tab = rawTab && PAGE_IDS.has(rawTab as PageId) ? (rawTab as PageId) : "dashboard";
+  const tab = rawTab && PAGE_IDS.has(rawTab as PageId) ? (rawTab as PageId) : "command";
   const rawApp = params.get("appearance");
   const appearance = rawApp === "dark" || rawApp === "light" ? rawApp : null;
   const theme = parseThemeSlug(params.get("theme"));
@@ -108,9 +110,9 @@ function writeSearch(opts: {
   if (next !== cur) window.history.replaceState(null, "", next);
 }
 
-export function MoneyMateMesh() {
+export function AgentPaL() {
   const [state, setState] = useState<Snapshot | null>(null);
-  const [page, setPageState] = useState<PageId>("dashboard");
+  const [page, setPageState] = useState<PageId>("command");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chat, setChat] = useState(MONEYMATE_DEMO_PROMPT);
@@ -348,6 +350,7 @@ export function MoneyMateMesh() {
   void budgets;
 
   if (!state) {
+    if (error === "AgentPaL owner sign-in required.") return <OwnerAccess />;
     return (
       <main className="px-6 py-16 text-[var(--mm-muted)]">
         Loading AgentPaL…
@@ -513,6 +516,12 @@ export function MoneyMateMesh() {
 
   const screen = (() => {
     switch (page) {
+      case "command":
+      case "money-os":
+      case "agent-mesh":
+      case "hardening":
+      case "analytics":
+        return <CommandCenter area={page} state={state} setPage={setPage} refresh={refresh} />;
       case "transactions":
         return <TransactionsScreen {...screenProps} />;
       case "subscriptions":

@@ -1,5 +1,5 @@
-import { MoneyMateMesh } from "@/components/MoneyMateMesh";
+import { AgentPaL } from "@/components/AgentPaL";
 
 export default function HomePage() {
-  return <MoneyMateMesh />;
+  return <AgentPaL />;
 }

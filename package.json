@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "AgentPaL \u2014 Your AI. Your Money. Your Rules. An AI financial agent with an AgentPaL Guard trust and execution layer, built for the PayPal AI Hackathon.",
+  "description": "AgentPaL — Your AI. Your Money. Your Rules. An AI financial agent with an AgentPaL Guard trust and execution layer, built for the PayPal AI Hackathon.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@paypal/agent-toolkit": "^1.11.0",
     "@paypal/paypal-server-sdk": "^2.5.0",
     "@paypal/react-paypal-js": "^10.6.1",
@@ -23,7 +24,9 @@
     "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "zod": "4.6.7"
+    "react-markdown": "^10.1.0",
+    "zod": "4.6.7",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@types/braintree": "3.4.5",

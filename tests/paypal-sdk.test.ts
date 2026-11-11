@@ -84,7 +84,7 @@ describe("PayPal server SDK: authorize → Guard verify → capture / void", () 
     const done = await updateStore((s) => completePaymentAfterBuyer(s, payment.payment_id, { orderId: payment.paypal!.order_id }));
     expect(f.authorizeOrder).toHaveBeenCalledTimes(1);
     expect(f.captureAuthorizedPayment).toHaveBeenCalledTimes(1);
-    const capReq = f.captureAuthorizedPayment.mock.calls[0][0] as { body: { finalCapture: boolean; amount: { value: string } }; paypalRequestId: string };
+    const capReq = f.captureAuthorizedPayment.mock.calls[0][0] as unknown as { body: { finalCapture: boolean; amount: { value: string } }; paypalRequestId: string };
     expect(capReq.body.finalCapture).toBe(true);
     expect(capReq.paypalRequestId).toBe(`cap-${payment.payment_id}`);
     expect(f.voidPayment).not.toHaveBeenCalled();

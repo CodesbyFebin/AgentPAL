@@ -17,6 +17,28 @@ This repository is a hackathon MVP for the [PayPal AI Hackathon](https://paypala
 
 > **AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal.** Do not use either the PayPal or Braintree name or logo in a way that implies affiliation.
 
+## AgentPaL Command Center
+
+The home screen is the Command Center. The deployment scoreboard is calculated from configured sandbox credentials, owner authentication, webhook verification, audit integrity, and secret exposure checks. A score of 100/100 requires every check, including a PayPal-verified webhook. The simulator runs in memory and never changes the score.
+
+| Workspace | What it provides |
+|---|---|
+| Money OS | Guarded orders, capture and refunds, invoices, subscriptions, disputes, payment links, a demo catalog and per-item cart proposals. The workbench supports sandbox payout, vault token metadata and shipment tracker lookups. PayPal Checkout includes eligibility-dependent Pay Later messaging. |
+| AI Agent Mesh | The installed PayPal Agent Toolkit definitions, the AgentPaL fleet, Guard permissions and optional remote PayPal sandbox MCP tool discovery. The tool catalog is broader than the execution allowlist. |
+| AgentPaL Studio | The imported conversation shell, command palette, themes, artifact canvas and responsive layout. Chat uses the AgentPaL Coach. PayPal Docs searches a curated reference index. Artifact generation uses the configured model and previews static HTML or SVG in an isolated frame. Chat history is held in the browser tab. |
+| Hardening | Signed owner sessions, demo owner/viewer roles, same-origin writes, a webhook verifier simulator, an environment-backed secrets inventory, idempotency counters, audit validation, and export. |
+| Analytics | Payment status distribution and counts for approvals, AI calls, blocked tools, verified webhooks, and audit events. |
+
+### Sandbox setup
+
+1. Run `npm ci` and `npm run dev` for the seeded demo. Open **Command Center**, **Money OS**, or **AgentPaL Studio**.
+2. To enable provider integrations, set `AGENTPAL_OWNER_KEY` to a randomly generated value of at least 32 characters, then configure the desired sandbox or AI credentials in the server environment. Open the home page and sign in with that key. Credential-backed APIs require this session. Public checkout callbacks and verified webhooks retain their dedicated entry points.
+3. Configure a PayPal sandbox webhook at `/api/webhooks/paypal` and set its ID in `PAYPAL_WEBHOOK_ID`. The Hardening simulator is useful for local checks before a signed sandbox event arrives.
+4. Set `AGENTPAL_PAYOUT_SANDBOX_EMAIL` to a fixed sandbox test account to enable owner-confirmed USD payouts. The form enforces a USD 25 cap. Reuse the same idempotency key after an uncertain response.
+5. Use **Discover sandbox MCP** to list the merchant app's available tools. The hosted MCP server must accept the sandbox app authorization. AgentPaL uses its existing Guard for execution.
+
+The JSON file and rate limiter support a single instance. A production deployment with multiple operators or replicas needs a shared database, identity-backed roles, durable idempotency, and a managed secret store.
+
 ## The problem
 
 People can already ask a chatbot “can I afford this?” and they can already click a PayPal button. What they cannot do safely is delegate a real purchase or a recurring charge to an agent and still answer: what did I authorize, why was this allowed or held, did the merchant deliver, and can I freeze everything instantly?
@@ -186,7 +208,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 This repo includes `render.yaml`. The build command is `npm ci --include=dev && npm run build`, `NODE_ENV=production`, and the health check is `GET /api/health` (returns `{ ok, paymentMode, paypalMode, aiMode }` with no secrets). `npm start` binds to `next start -p ${PORT:-3000}`. Local `npm run dev` stays on port 3000.
 
-Set the same environment variables, with `APP_URL` equal to your public Render URL. A banner at the top of every page says **MOCK payments: no real or sandbox money moved**, **Braintree sandbox**, or **PayPal Sandbox** depending on `paymentMode`.
+Set the same environment variables, with `APP_URL` equal to your public Render URL. Set `AGENTPAL_OWNER_KEY` before deploying with provider credentials. A banner at the top of every page says **MOCK payments: no real or sandbox money moved**, **Braintree sandbox**, or **PayPal Sandbox** depending on `paymentMode`.
 
 ```bash
 npm run build

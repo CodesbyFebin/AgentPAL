@@ -288,12 +288,14 @@ export function webhookHeadersFrom(req: Request): PayPalWebhookHeaders {
  * Narrow fallback: @paypal/paypal-server-sdk 2.x does not ship the Notifications
  * (verify-webhook-signature) API, so this one call is a direct sandbox fetch.
  */
-async function sandboxAccessToken(): Promise<string> {
+export async function sandboxAccessToken(): Promise<string> {
   const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString("base64");
   const res = await fetch(`${SANDBOX}/v1/oauth2/token`, {
     method: "POST",
     headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=client_credentials",
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`PayPal OAuth failed (${res.status})`);
   return ((await res.json()) as { access_token: string }).access_token;
@@ -367,4 +369,18 @@ export async function getSubscription(subscriptionId: string): Promise<{
   } catch (err) {
     throw sdkError("get subscription", err);
   }
+}
+
+/** Sandbox REST surface for resources the server SDK does not cover. */
+export async function paypalSandboxRequest(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+  const token = await sandboxAccessToken();
+  if (!token) throw new Error("PayPal did not return a sandbox access token.");
+  const res = await fetch(SANDBOX + path, {
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`PayPal sandbox request failed (${res.status}).`);
+  return await res.json() as Record<string, unknown>;
 }

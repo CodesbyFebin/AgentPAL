@@ -1,4 +1,4 @@
-import { chatWithTools } from "./ai";
+import { chatWithTools, type ToolChatMessage } from "./ai";
 import { COACH_TOOLS, runCoachTool } from "./ai-tools";
 import { logAiCall } from "./ai-log";
 import { explainAffordability, offlineCoachExplanation, parsePurchaseIntent } from "./coach";
@@ -55,7 +55,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
     return { ...basic, analysis: basic.analysis ?? analysis, tools_used: toolsUsed };
   }
 
-  const messages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string }> = [
+  const messages: ToolChatMessage[] = [
     {
       role: "system",
       content:
@@ -69,7 +69,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
   try {
     for (let hop = 0; hop < 4; hop++) {
       const started = Date.now();
-      const result = await chatWithTools(messages as never, [...COACH_TOOLS, PAYPAL_TOOLKIT_AI_TOOL] as typeof COACH_TOOLS);
+      const result = await chatWithTools(messages, [...COACH_TOOLS, PAYPAL_TOOLKIT_AI_TOOL]);
       model = result.model;
       logAiCall(store, {
         kind: "llm",
@@ -88,9 +88,11 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
       }
       messages.push({
         role: "assistant",
-        content: result.text || "",
+        content: result.text || null,
+        tool_calls: result.toolCalls.map((call) => ({
+          id: call.id, type: "function", function: { name: call.name, arguments: call.arguments },
+        })),
       });
-      // The API expects tool_calls on the assistant message; we also push tool results.
       for (const call of result.toolCalls) {
         toolsUsed.push(call.name);
         let args: Record<string, unknown> = {};
@@ -113,7 +115,6 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          name: call.name,
           content: JSON.stringify(out),
         });
       }
@@ -126,7 +127,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
       planner: "offline",
       model: "offline fallback after AI error",
       tools_used: toolsUsed,
-      reply: fallback.reply + (err instanceof Error ? `\n\n(AI error: ${err.message})` : ""),
+      reply: fallback.reply + "\n\nThe AI provider request failed.",
     };
   }
 

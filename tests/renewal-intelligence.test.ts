@@ -1,3 +1,4 @@
+import { emptyStore } from "@/lib/store";
 import { describe, expect, it } from "vitest";
 import { SEED_MERCHANTS } from "@/lib/catalog";
 import { seedFinance } from "@/lib/finance-seed";
@@ -29,6 +30,7 @@ function mandate(overrides: Partial<Mandate> = {}): Mandate {
 
 function demoStore(m: Mandate = mandate()): StoreData {
   const store: StoreData = {
+    ...emptyStore(),
     goals: [],
     mandates: [m],
     plans: [],

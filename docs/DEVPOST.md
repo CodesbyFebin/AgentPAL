@@ -4,7 +4,7 @@
 
 **Disclaimer:** AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal.
 
-**Elevator:** AgentPaL is the trust layer between AI agents and your money. AgentPaL Coach is the financial brain that can tell you, with deterministic math, whether you can afford a ₹65,000 laptop this month. AgentPaL Guard is the execution layer that lets an agent prepare a sandbox payment only inside a signed mandate, with human approval, a kill switch, and a receipt you can verify.
+**Elevator:** AgentPaL is a Money OS and command center for agent-assisted commerce. AgentPaL Coach is the financial brain that can tell you, with deterministic math, whether you can afford a ₹65,000 laptop this month. AgentPaL Guard is the execution layer that lets an agent prepare a sandbox payment only inside a signed mandate, with human approval, a kill switch, and a receipt you can verify.
 
 ## Inspiration
 
@@ -13,6 +13,10 @@ Agentic commerce is arriving faster than the controls around it. Chatbots alread
 Sure-inspired intelligence tells the system what is happening, AgentPaL Coach understands what the user can afford, and AgentPaL Guard determines what the AI is allowed to do.
 
 ## What it does
+
+- Brings the Money OS, AI Agent Mesh, Hardening, and Analytics into one command center. Its deployment scoreboard uses actual sandbox configuration and verification checks.
+- Adds an AgentPaL Studio with a Money Coach, artifact canvas, and PayPal developer references. The Agent Mesh shows the official Toolkit catalog and can discover tools from PayPal's sandbox MCP endpoint.
+- Gives the owner a PayPal workbench for payout, vault, and shipment tracking lookups, plus a capped payout flow for a configured sandbox test account.
 
 - Answers "Can I afford a ₹65,000 laptop this month? If yes, help me buy it safely" using a unit-tested affordability engine, then a coach that only narrates those numbers.
 - Lets an agent buy safely under a $50 signed mandate: $8 API credits are auto-allowed, a $12 domain waits for you, the processor authorizes first (Braintree sandbox when configured, otherwise PayPal REST, otherwise labelled mock) and captures only after delivery checks pass, and a signed receipt is issued.
