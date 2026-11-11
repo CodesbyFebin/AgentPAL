@@ -5,7 +5,7 @@ import { Badge, Button, Card } from "@/components/ui/kit";
 import type { RunFn, Snapshot } from "@/components/app-types";
 import type { PayPalToolCall } from "@/lib/types";
 
-const ALLOWLIST = ["create_order", "get_order", "create_invoice", "list_invoices", "show_subscription_details"];
+const ALLOWLIST = ["create_order", "get_order", "list_invoices", "show_subscription_details"];
 
 function tone(d: PayPalToolCall["decision"]) {
   return d === "EXECUTED" ? "success" : d === "NEEDS_APPROVAL" ? "warning" : "danger";
@@ -24,6 +24,7 @@ async function runDemo() {
 export function PayPalToolkitCard({ state, run }: { state: Snapshot; run: RunFn }) {
   const calls = [...(state.paypal_tool_calls || [])].reverse().slice(0, 6);
   const mode = state.modes.agentToolkit || "mock";
+  const hasMandate = (state.mandates || []).some((m) => m.goal_id === "coach_paypal_tools" && m.status === "active");
   const auto = useRef(false);
 
   useEffect(() => {
@@ -48,7 +49,16 @@ export function PayPalToolkitCard({ state, run }: { state: Snapshot; run: RunFn 
         {mode === "mock" && " PayPal sandbox credentials are not set, so allowed calls return results marked MOCK."}
       </p>
       <p className="mt-2 text-[11px] text-[var(--mm-muted)]">Allowlist: {ALLOWLIST.join(" · ")}</p>
+      <p className="mt-1 text-[11px] text-[var(--mm-muted)]">
+        Mandate: {hasMandate ? "Coach PayPal tools — USD 100 total, USD 50 per order, Nameforge + DevTools only (signed by you)" : "not signed — allowed calls stay blocked until you sign it. Coach cannot create authority."}
+      </p>
       <div className="mt-3 flex flex-wrap gap-2">
+        {!hasMandate && (
+          <Button onClick={() => run("Signing Coach PayPal tools mandate…", async () => {
+            const r = await fetch("/api/mandates/sign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: "coach_paypal_tools" }) });
+            if (!r.ok) throw new Error((await r.json()).error || "sign failed");
+          })}>Sign Coach tools mandate</Button>
+        )}
         <Button variant="secondary" onClick={() => run("Running Guard-wrapped PayPal toolkit demo…", runDemo)}>
           Run Guard demo (1 allowed, 2 blocked)
         </Button>

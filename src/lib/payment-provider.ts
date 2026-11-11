@@ -171,12 +171,13 @@ export async function refundReservedPayment(
   rail: Payment["rail"],
   amount?: number,
   currency = "USD",
+  requestId?: string,
 ): Promise<RefundResult> {
   if (rail === "braintree_sandbox") {
     const tx = await refundSale(captureId, amount);
     return { provider: "braintree", mode: "sandbox", refund_id: tx.id };
   }
-  const ref = await refundCapture(captureId, amount, currency);
+  const ref = await refundCapture(captureId, amount, currency, requestId);
   return {
     provider: ref.mode === "mock" ? "mock" : "paypal",
     mode: ref.mode,

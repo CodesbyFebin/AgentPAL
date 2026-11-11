@@ -644,6 +644,13 @@ export interface StoreData {
   financial_snapshots: FinancialSnapshot[];
   /** Guard-wrapped PayPal agent-toolkit calls proposed by AgentPaL Coach. */
   paypal_tool_calls: PayPalToolCall[];
+  /** Stored responses for Idempotency-Key replays on mutating routes. */
+  idempotency_responses: IdempotentResponse[];
+  refunds: RefundRecord[];
+  /** Local objects created while PayPal creds are absent. Always labelled MOCK. */
+  paypal_mock: { invoices: MockPayPalObject[]; plans: MockPayPalObject[]; products: MockPayPalObject[] };
+  /** Seen PayPal webhook transmission ids for replay protection. */
+  webhook_transmissions: Array<{ transmission_id: string; event_id?: string; seen_at: string }>;
   settings: Settings;
 }
 
@@ -681,5 +688,43 @@ export interface PayPalToolCall {
   result?: unknown;
   reservation_id?: string;
   receipt: PayPalToolReceipt;
+  created_at: string;
+}
+
+export interface IdempotentResponse {
+  key: string;
+  scope: string;
+  request_hash: string;
+  status: number;
+  body: unknown;
+  created_at: string;
+}
+
+export interface RefundRecord {
+  refund_id: string;
+  payment_id: string;
+  amount: number;
+  currency: "USD";
+  reason: string;
+  kind: "full" | "partial";
+  status: "COMPLETED" | "BLOCKED" | "FAILED";
+  provider: "braintree" | "paypal" | "mock" | "x402";
+  mode: "sandbox" | "mock";
+  provider_refund_id?: string;
+  paypal_request_id: string;
+  block_reason?: string;
+  event_hash?: string;
+  created_at: string;
+}
+
+export interface MockPayPalObject {
+  id: string;
+  mock: true;
+  kind: "invoice" | "plan" | "product";
+  status: string;
+  name?: string;
+  amount?: string;
+  currency?: "USD";
+  recipient?: string;
   created_at: string;
 }

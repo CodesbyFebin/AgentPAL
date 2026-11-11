@@ -35,7 +35,13 @@ export function reserveSpend(
   if (existing.reservation && existing.reservation.status === "reserved") {
     return { reservation: existing.reservation, deduped: true };
   }
-  const remaining = remainingBudget(store, opts.mandate_id);
+  // remainingBudget already counts the payment this reservation is for (it is pushed first), so add it back.
+  const self = opts.payment_id
+    ? store.payments.find(
+        (p) => p.payment_id === opts.payment_id && p.mandate_id === opts.mandate_id && !["voided", "refunded", "denied", "failed"].includes(p.status),
+      )
+    : undefined;
+  const remaining = remainingBudget(store, opts.mandate_id) + (self ? self.amount : 0);
   if (opts.amount > remaining + 1e-9) {
     throw new Error(
       `Cannot reserve ${opts.amount} against mandate ${opts.mandate_id}: only ${remaining} remains under the total limit (atomic reservation prevents a double-spend).`,

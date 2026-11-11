@@ -116,7 +116,9 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
   }
 
   const expires = new Date(input.mandate.expires_at);
-  if (Number.isFinite(expires.getTime()) && expires.getTime() <= now.getTime()) {
+  if (!Number.isFinite(expires.getTime())) {
+    deny("expiry", `Mandate expiry "${input.mandate.expires_at}" is not a valid date, so the mandate is treated as expired.`);
+  } else if (expires.getTime() <= now.getTime()) {
     deny("expiry", `Mandate expired at ${input.mandate.expires_at}.`);
   } else {
     pass("expiry", `Mandate is valid until ${input.mandate.expires_at}.`);
@@ -154,8 +156,8 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     pass("category", `Category "${input.category}" is allowed by the mandate.`);
   }
 
-  if (input.amount <= 0) {
-    deny("amount", "Purchase amount must be greater than zero.");
+  if (typeof input.amount !== "number" || !Number.isFinite(input.amount) || input.amount <= 0) {
+    deny("amount", "Purchase amount must be a finite number greater than zero.");
   } else {
     pass("amount", `${amt} is a positive amount.`);
   }
@@ -182,7 +184,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
     pass("recurring", "One-time purchase, not a subscription.");
   }
 
-  if (input.amount > perTxLimit(input.mandate) || input.amount > approvalThreshold(input.mandate)) {
+  if (!Number.isFinite(input.amount) || input.amount > perTxLimit(input.mandate) || input.amount > approvalThreshold(input.mandate)) {
     needApproval(
       "per_tx_limit",
       `${amt} is over the per-transaction limit of ${txLimit} (approval threshold ${threshold}). A human must approve this purchase.`,
@@ -193,7 +195,7 @@ export function evaluatePolicy(input: PolicyInput): PolicyDecision {
 
   // --- 3. DENY if total limit exceeded (wins over earlier REQUIRE_APPROVAL) ---
   const nextSpend = input.mandateSpend + input.amount;
-  if (nextSpend > input.mandate.max_total_spend + 1e-9) {
+  if (!Number.isFinite(nextSpend) || nextSpend > input.mandate.max_total_spend + 1e-9) {
     deny(
       "total_limit",
       `${amt} plus existing mandate spend of ${formatMoney(input.mandateSpend, mandateCcy)} would exceed the total limit of ${totalLimit}.`,

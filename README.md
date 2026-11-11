@@ -62,14 +62,14 @@ The AI Money Coach answers “Can I afford a ₹65,000 laptop this month? If yes
 |---|---|
 | Available-to-spend, safe limit, EOM projection, goal trade-offs, verdict | Pure TypeScript finance engine, unit-tested. The AI never does this math. |
 | Plain-language explanation, alternatives, payment *proposal* | AI coach (OpenAI-compatible) or labelled offline fallback |
-| ALLOW / REQUIRE_APPROVAL / DENY, injection guard, reservations | AgentPaL Guard policy engine |
+| ALLOW / REQUIRE_APPROVAL / DENY, deterministic allowlist/category/cap enforcement, reservations | AgentPaL Guard policy engine |
 | Money movement | Braintree sandbox (preferred), else PayPal Orders v2, else labelled mock payments |
 
 Available-to-spend = balances − upcoming bills due before the next income − emergency buffer − this month's planned goal contributions.
 
 ## Policy decision order
 
-1. Kill switch, revoked or expired mandate, merchant not allowed, category not allowed, amount ≤ 0, or prompt injection → **DENY**
+1. Kill switch, a revoked, expired or unparseable mandate expiry, a merchant not on the allowlist, a category not allowed, an amount that is not a finite number above 0, or a match from the best-effort merchant-text screen → **DENY**. Category always comes from the server-side merchant record, never from the caller.
 2. Currency mismatch, recurring without `allowRecurring`, or amount above the per-transaction / approval threshold → **REQUIRE_APPROVAL**
 3. `mandateSpend + amount` over the total limit → **DENY** (wins over an earlier approval requirement)
 4. `projectedBalance - amount` under `minimumBalance` → **REQUIRE_APPROVAL**
@@ -192,6 +192,15 @@ Set the same environment variables, with `APP_URL` equal to your public Render U
 npm run build
 npm start
 ```
+
+## Security Center, refunds, invoices, plans (phase 2)
+
+- **Refunds & Disputes.** `POST /api/refunds` handles full and partial refunds. Each needs a reason, is capped at the captured amount minus earlier refunds, is blocked by the kill switch, and is idempotent (the `Idempotency-Key` header becomes `PayPal-Request-Id`). Disputes come from the agent toolkit (`list_disputes`) when live. In mock mode the app shows seeded examples labelled **DEMO DATA**.
+- **Invoices & Plans.** These use the agent toolkit (`create_invoice`, `send_invoice`, `list_invoices`, `create_product`, `create_subscription_plan`, `list_subscription_plans`, `cancel_subscription`) through AgentPaL Guard, owner role only. Invoices are capped at USD 500. New plans must stay under the Scenario B subscription guardian cap of USD 30/month. In mock mode, objects are stored locally and stamped `MOCK`.
+- **Security Center.** The health score is computed from real checks: credentials, webhook ID, verified webhooks, audit-chain integrity, no `NEXT_PUBLIC_*` secrets, kill switch, headers, RBAC and rate limits. The demo RBAC roles (owner and viewer) are enforced in `src/middleware.ts`. A viewer can read and can engage the kill switch, but only an owner can release it. Payment routes are rate-limited, and CSP plus other security headers are set on every response.
+- **Webhooks.** `POST /api/webhooks/paypal` verifies signatures with PayPal (`PAYPAL_WEBHOOK_ID`), enforces a 5-minute freshness window, and ignores replayed transmission IDs.
+- **Developer tab.** It shows the open-source libraries with their licenses, excerpts of the real integration code, an audit-log CSV export (formula-injection safe) and a chain verify button.
+- **Agents never create authority.** Mandates are signed only by an explicit user click (`POST /api/mandates/sign`). The coach and the toolkit wrapper only look mandates up. Amounts come from the server catalog, never from a model. Unknown SKUs are rejected. Only the user's own click on **Propose** can accept affordability trade-offs.
 
 ## Limits and what this does not prove
 

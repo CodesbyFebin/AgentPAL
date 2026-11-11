@@ -26,6 +26,10 @@ export type PageId =
   | "agents"
   | "insights"
   | "reports"
+  | "refunds"
+  | "invoices"
+  | "security"
+  | "developer"
   | "settings";
 
 export const PAGES: { id: PageId; label: string; group?: string }[] = [
@@ -39,6 +43,10 @@ export const PAGES: { id: PageId; label: string; group?: string }[] = [
   { id: "agents", label: "Agents" },
   { id: "insights", label: "Insights" },
   { id: "reports", label: "Reports" },
+  { id: "refunds", label: "Refunds & Disputes" },
+  { id: "invoices", label: "Invoices & Plans" },
+  { id: "security", label: "Security Center" },
+  { id: "developer", label: "Developer" },
   { id: "settings", label: "Settings" },
 ];
 

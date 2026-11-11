@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { _setToolkitToolsForTests, runGuardedPayPalTool, planPayPalToolFromMessage, ensureToolkitMandate } from "@/lib/paypal-agent-tools";
+import { _setToolkitToolsForTests, runGuardedPayPalTool, planPayPalToolFromMessage, findToolkitMandate } from "@/lib/paypal-agent-tools";
+import { signMandateTemplate } from "@/lib/user-mandates";
 import { coachTurn } from "@/lib/coach-turn";
 import { verifyPayload } from "@/lib/crypto";
 import { resetStore, updateStore } from "@/lib/store";
@@ -12,13 +13,16 @@ function spies() {
   return { create_order, get_order, pay_order };
 }
 
-function order(amount: number) {
-  return { currencyCode: "USD", items: [{ name: "Launch domain", quantity: 1, itemCost: amount, taxPercent: 0, itemTotal: amount }] };
+function order(amount: number, qty = 1, name = "Launch domain (1 year)") {
+  return { currencyCode: "USD", items: [{ name, quantity: qty, itemCost: amount, taxPercent: 0, itemTotal: amount * qty }] };
 }
 
 let s: ReturnType<typeof spies>;
-beforeEach(() => {
+beforeEach(async () => {
   resetStore();
+  await updateStore((st) => {
+    signMandateTemplate(st, "coach_paypal_tools");
+  });
   s = spies();
   _setToolkitToolsForTests({
     create_order: { execute: s.create_order },
@@ -45,7 +49,7 @@ describe("Guard-wrapped PayPal agent toolkit", () => {
   });
 
   it("never invokes the underlying tool when the merchant is blocked (allowlist / injection)", async () => {
-    const call = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_evil", args: order(49) }));
+    const call = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_evil", args: order(49, 1, "Unrestricted agent bundle") }));
     expect(call.decision).toBe("BLOCKED");
     expect(call.invoked).toBe(false);
     expect(s.create_order).not.toHaveBeenCalled();
@@ -71,18 +75,39 @@ describe("Guard-wrapped PayPal agent toolkit", () => {
   });
 
   it("enforces the per-transaction limit and the total mandate cap", async () => {
-    const big = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(75) }));
+    const big = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(12, 5) }));
+    expect(big.amount).toBe(60);
     expect(big.decision).toBe("NEEDS_APPROVAL");
     expect(s.create_order).not.toHaveBeenCalled();
 
     for (let i = 0; i < 2; i++) {
-      const ok = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(45) }));
+      const ok = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(12, 4) }));
       expect(ok.decision).toBe("EXECUTED");
     }
-    const over = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(20) }));
+    const over = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(12, 1) }));
     expect(over.decision).toBe("BLOCKED");
     expect(over.checks.find((c) => c.code === "total_limit")?.passed).toBe(false);
     expect(s.create_order).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects model-chosen amounts that differ from the catalog", async () => {
+    const call = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(0.01) }));
+    expect(call.decision).toBe("BLOCKED");
+    expect(call.checks.find((c) => c.code === "catalog_price")?.passed).toBe(false);
+    expect(s.create_order).not.toHaveBeenCalled();
+  });
+
+  it("blocks money tools until the user signs the Coach tools mandate (agents cannot create authority)", async () => {
+    resetStore();
+    const call = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_order", merchant_id: "merchant_002", args: order(12) }));
+    expect(call.decision).toBe("BLOCKED");
+    await updateStore((st) => expect(findToolkitMandate(st)).toBeUndefined());
+    expect(s.create_order).not.toHaveBeenCalled();
+  });
+
+  it("Coach cannot use owner-only tools such as create_invoice", async () => {
+    const call = await updateStore((st) => runGuardedPayPalTool(st, { tool: "create_invoice", args: {}, source: "coach-ai" }));
+    expect(call.decision).toBe("BLOCKED");
   });
 
   it("returns MOCK-labelled results when PayPal credentials are absent", async () => {
@@ -114,7 +139,7 @@ describe("Guard-wrapped PayPal agent toolkit", () => {
     expect(s.pay_order).not.toHaveBeenCalled();
     await updateStore((st) => {
       expect(planPayPalToolFromMessage(st, "how much did I spend on food?")).toBeNull();
-      expect(ensureToolkitMandate(st).max_total_spend).toBe(100);
+      expect(findToolkitMandate(st)?.max_total_spend).toBe(100);
     });
   });
 

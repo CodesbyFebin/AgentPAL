@@ -218,6 +218,7 @@ export async function refundCapture(
   captureId: string,
   amount?: number,
   currency = "USD",
+  requestId?: string,
 ): Promise<{ refund_id: string; mode: "sandbox" | "mock" }> {
   const mode = paypalMode();
   if (mode === "mock") {
@@ -226,7 +227,7 @@ export async function refundCapture(
   try {
     const { result } = await sdk().payments.refundCapturedPayment({
       captureId,
-      paypalRequestId: `refund-${captureId}-${amount ?? "full"}`,
+      paypalRequestId: requestId || `refund-${captureId}-${amount ?? "full"}`,
       prefer: "return=representation",
       body: amount ? { amount: { value: amount.toFixed(2), currencyCode: currency } } : {},
     });

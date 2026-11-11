@@ -1,11 +1,10 @@
-import { PIXELFORGE_ID } from "./catalog";
 import { appendEvent } from "./events";
 import { assessFromFinance, budgetProgress } from "./finance-engine";
-import { createSignedMandate, executeStep } from "./engine";
+import { executeStep } from "./engine";
 import { id, nowIso } from "./ids";
 import { logAiCall } from "./ai-log";
 import { authorizeTool, levelForTool, parseToolArgs, redactSecrets } from "./ai-permissions";
-import { formatINR } from "./money";
+import { formatINR, usdToInr } from "./money";
 import { lifecycleOf } from "./subscription-metrics";
 import type { Plan, PlanStep, StoreData } from "./types";
 
@@ -72,12 +71,11 @@ export const COACH_TOOLS = [
     type: "function" as const,
     function: {
       name: "propose_payment",
-      description: "Create a payment intent for the AgentPaL Guard policy engine. Never captures or sends money. A human still has to approve if policy requires it.",
+      description: "Create a payment intent for the AgentPaL Guard policy engine. Never captures or sends money, never creates a mandate, and cannot accept trade-offs on the user's behalf. A human still has to approve if policy requires it.",
       parameters: {
         type: "object",
         properties: {
           sku: { type: "string" },
-          accept_tradeoffs: { type: "boolean" },
         },
         required: ["sku"],
       },
@@ -202,29 +200,51 @@ function dispatch(store: StoreData, name: string, args: Record<string, unknown>)
       return assessFromFinance(fin, amount, { requestLabel: String(args.label || "purchase") });
     }
     case "propose_payment":
-      return proposePaymentIntent(store, String(args.sku || "nova_14_65000"), Boolean(args.accept_tradeoffs));
+      // The model can never accept trade-offs for the user: only a user click (/api/purchases) can.
+      return proposePaymentIntent(store, String(args.sku || ""), { userAcceptedTradeoffs: false });
     default:
       throw new Error(`Unknown tool ${name}`);
   }
 }
 
 /** Creates a payment intent only. Policy may ALLOW, REQUIRE_APPROVAL, or DENY. Nothing is captured here. */
-export async function proposePaymentIntent(store: StoreData, sku: string, acceptTradeoffs: boolean) {
+export async function proposePaymentIntent(
+  store: StoreData,
+  sku: string,
+  opts: { userAcceptedTradeoffs: boolean },
+) {
   const merchant = store.merchants.find((m) => m.products.some((p) => p.sku === sku));
   const product = merchant?.products.find((p) => p.sku === sku);
   if (!merchant || !product) throw new Error(`Unknown SKU ${sku}`);
 
-  if (product.currency === "INR") {
-    const analysis = assessFromFinance(store.finance, product.amount, { requestLabel: product.name });
-    if (analysis.verdict === "NOT_RECOMMENDED") {
-      return { error: "The affordability engine does not recommend this purchase. No payment intent was created.", analysis };
-    }
-    if (analysis.verdict === "AFFORDABLE_WITH_TRADEOFFS" && !acceptTradeoffs) {
-      return {
-        error: "This is only affordable with trade-offs. Pass accept_tradeoffs=true if the user agrees, otherwise no intent is created.",
-        analysis,
-      };
-    }
+  // Affordability runs for every currency (USD converted at the labelled demo rate).
+  const inrAmount = product.currency === "INR" ? product.amount : usdToInr(product.amount);
+  const analysis = assessFromFinance(store.finance, inrAmount, { requestLabel: product.name });
+  if (analysis.verdict === "NOT_RECOMMENDED") {
+    return { error: "The affordability engine does not recommend this purchase. No payment intent was created.", analysis };
+  }
+  if (analysis.verdict === "AFFORDABLE_WITH_TRADEOFFS" && !opts.userAcceptedTradeoffs) {
+    return {
+      error: "This is only affordable with trade-offs. The user must accept them with the Propose button; the coach cannot accept on their behalf. No intent was created.",
+      analysis,
+    };
+  }
+
+  // Authority comes only from a mandate the user signed. AI code never creates or widens one.
+  const mandate = store.mandates.find(
+    (m) =>
+      m.status === "active" &&
+      m.currency === product.currency &&
+      m.approved_merchants.includes(merchant.merchant_id) &&
+      m.allowed_categories.includes(product.category),
+  );
+  if (!mandate) {
+    appendEvent(store, "coach.no_mandate", `No signed mandate covers ${product.name}; nothing was proposed.`, { sku });
+    return {
+      error: "no_matching_mandate",
+      message: `No active signed mandate covers ${merchant.name} / ${product.category} in ${product.currency}. Sign one yourself (Coach → “Sign personal INR mandate”, or Agents → Mandates). The coach cannot create authority.`,
+      analysis,
+    };
   }
 
   let goal = store.goals.find((g) => g.objective.includes(product.name));
@@ -240,26 +260,6 @@ export async function proposePaymentIntent(store: StoreData, sku: string, accept
     store.goals.push(goal);
   }
 
-  let mandate = store.mandates.find(
-    (m) =>
-      m.status === "active" &&
-      m.currency === product.currency &&
-      m.approved_merchants.includes(merchant.merchant_id) &&
-      m.allowed_categories.includes(product.category),
-  );
-  if (!mandate) {
-    mandate = createSignedMandate(store, {
-      goal_id: goal.goal_id,
-      title: product.currency === "INR" ? "Personal INR purchases" : "Agent purchases",
-      max_total_spend: Math.max(product.amount, 80000),
-      per_tx_limit: product.currency === "INR" ? 10000 : 10,
-      approved_merchants: [merchant.merchant_id, PIXELFORGE_ID],
-      allowed_categories: [product.category, "electronics", "accessories"],
-      currency: product.currency,
-      minimum_balance: product.currency === "INR" ? store.finance.profile.emergency_buffer : 0,
-    });
-  }
-
   const step: PlanStep = {
     step_id: id("step"),
     action: "purchase",
@@ -270,7 +270,7 @@ export async function proposePaymentIntent(store: StoreData, sku: string, accept
     currency: product.currency,
     rail: "paypal_sandbox",
     approval_required: product.amount > mandate.per_tx_limit,
-    rationale: `Coach proposed ${product.name} at ${product.currency === "INR" ? formatINR(product.amount) : product.amount}. This is an intent only.`,
+    rationale: `Proposed ${product.name} at ${product.currency === "INR" ? formatINR(product.amount) : product.amount}. This is an intent only.`,
     product_sku: product.sku,
     recurring: product.recurring,
   };

@@ -15,7 +15,10 @@ export async function POST(req: Request) {
         store.subscriptions.find((s) => s.subscription_id === body.subscription_id) ||
         store.subscriptions.find((s) => s.merchant_id === "merchant_clouddraw");
       if (!sub) throw new Error("No managed subscription to replay");
-      const amount = Number(body.proposed_amount ?? sub.amount);
+      const amount = body.proposed_amount === undefined ? sub.amount : body.proposed_amount;
+      if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+        throw new Error("proposed_amount must be a finite number greater than zero");
+      }
       const webhook = demoRenewalWebhook(sub, amount);
       store.webhook_receipts.push({
         event_id: webhook.id,

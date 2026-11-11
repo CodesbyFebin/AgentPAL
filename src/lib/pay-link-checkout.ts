@@ -42,7 +42,14 @@ export async function startPaymentFromLink(
   }
 
   const mandate = store.mandates.find((m) => m.mandate_id === found.mandate_id);
-  const requested = amount ?? found.amount_cap;
+  // Security: when the link is for a catalog SKU, the server catalog price wins. The client
+  // amount is only honoured for open-amount links (no product_sku).
+  const catalogPrice = found.product_sku
+    ? store.merchants
+        .find((m) => m.merchant_id === (found.merchant_id || mandate?.approved_merchants[0]))
+        ?.products.find((p) => p.sku === found.product_sku)?.amount
+    : undefined;
+  const requested = catalogPrice ?? (amount ?? found.amount_cap);
   const evaluation = evaluatePaymentLink(store, found, requested, now);
   if (!evaluation.ok) {
     appendEvent(store, "pay_link.pay_blocked", `Payment via link ${found.link_id} blocked: ${evaluation.message}`, {

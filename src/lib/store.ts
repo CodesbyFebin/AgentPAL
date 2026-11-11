@@ -39,6 +39,10 @@ function emptyStore(): StoreData {
     ai_tool_logs: [],
     financial_snapshots: [],
     paypal_tool_calls: [],
+    idempotency_responses: [],
+    refunds: [],
+    paypal_mock: { invoices: [], plans: [], products: [] },
+    webhook_transmissions: [],
     settings: {
       kill_switch: false,
       signing: generateEd25519Pem(),
@@ -71,6 +75,10 @@ function hydrateStore(store: StoreData) {
   store.ai_tool_logs ??= store.ai_calls;
   store.financial_snapshots ??= [];
   store.paypal_tool_calls ??= [];
+  store.idempotency_responses ??= [];
+  store.refunds ??= [];
+  store.paypal_mock ??= { invoices: [], plans: [], products: [] };
+  store.webhook_transmissions ??= [];
   for (const m of store.mandates) {
     m.per_tx_limit ??= m.auto_approve_limit;
     m.approval_threshold ??= m.per_tx_limit;

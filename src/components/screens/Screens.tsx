@@ -664,6 +664,17 @@ export function CoachScreen({ state, chat, setChat, messages, analysis, askCoach
                 Propose NovaBook 14 (intent only)
               </Button>
             )}
+            {!(state.mandates || []).some((m) => m.status === "active" && m.currency === "INR") && (
+              <Button
+                className="ml-2 mt-3"
+                variant="secondary"
+                onClick={() => run("Signing your personal INR mandate…", async () => {
+                  await fetchJson("/api/mandates/sign", { method: "POST", body: JSON.stringify({ template: "personal_inr" }) });
+                })}
+              >
+                Sign personal INR mandate (₹80,000 cap)
+              </Button>
+            )}
           </Card>
         )}
         <PayPalToolkitCard state={state} run={run} />

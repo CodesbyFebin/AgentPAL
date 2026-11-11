@@ -141,9 +141,11 @@ export async function generatePlan(
     for (const raw of parsed.steps ?? []) {
       const merchant = merchants.find((m) => m.merchant_id === raw.merchant_id);
       if (!merchant) continue;
-      const product =
-        merchant.products.find((p) => p.sku === raw.product_sku) ?? merchant.products[0];
-      const amount = Number(raw.amount ?? product.amount);
+      // The model picks a catalog SKU only; unknown SKUs are rejected and the amount always comes
+      // from the server catalog, never from the model.
+      const product = merchant.products.find((p) => p.sku === raw.product_sku);
+      if (!product) continue;
+      const amount = product.amount;
       steps.push({
         step_id: id("step"),
         action: raw.action || "purchase",

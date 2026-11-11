@@ -11,7 +11,6 @@ export async function POST(req: Request) {
     step_id?: string;
     merchant_id?: string;
     amount?: number;
-    category?: string;
     recurring?: boolean;
   }>(req);
 
@@ -24,17 +23,20 @@ export async function POST(req: Request) {
         if (!plan || !step || !mandate) throw new Error("Step or mandate not found");
         return policyForStep(store, mandate, step);
       }
-      const mandate = store.mandates.find((m) => m.mandate_id === body.mandate_id) ?? store.mandates.at(-1);
+      if (!body.mandate_id) throw new Error("mandate_id is required");
+      const mandate = store.mandates.find((m) => m.mandate_id === body.mandate_id);
       const merchant = store.merchants.find((m) => m.merchant_id === body.merchant_id);
       if (!mandate || !merchant) throw new Error("Mandate or merchant not found");
-      const amount = Number(body.amount ?? merchant.products[0].amount);
+      const amount = body.amount === undefined ? merchant.products[0].amount : body.amount;
+      if (typeof amount !== "number" || !Number.isFinite(amount)) throw new Error("amount must be a finite number");
       const remaining = remainingBudget(store, mandate.mandate_id);
       return evaluatePolicy({
         mandate,
         merchant,
         amount,
         currency: merchant.products[0]?.currency || mandate.currency,
-        category: body.category || merchant.category,
+        // Category always comes from the server-side merchant record, never the caller.
+        category: merchant.category,
         recurring: Boolean(body.recurring),
         mandateSpend: mandate.max_total_spend - remaining,
         remainingBudget: remaining,

@@ -17,7 +17,8 @@ export async function POST(req: Request) {
         );
         if (existing) return { deduped: true as const, payment: existing };
       }
-      return proposePaymentIntent(store, body.sku!, Boolean(body.accept_tradeoffs));
+      // accept_tradeoffs here is the user's own click on the Propose button, never a model argument.
+      return proposePaymentIntent(store, body.sku!, { userAcceptedTradeoffs: body.accept_tradeoffs === true });
     });
     return ok(result, 201);
   } catch (err) {

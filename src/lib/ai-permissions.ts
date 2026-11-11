@@ -69,7 +69,6 @@ const schemas: Record<string, z.ZodType> = {
   }),
   propose_payment: z.object({
     sku: z.string().min(1).max(80),
-    accept_tradeoffs: z.boolean().optional(),
   }),
 };
 
@@ -83,7 +82,7 @@ export function parseToolArgs(name: string, args: unknown): { ok: true; data: Re
   return { ok: true, data: parsed.data as Record<string, unknown> };
 }
 
-const SECRET_KEYS = ["PAYPAL_CLIENT_SECRET", "PAYPAL_CLIENT_ID", "AI_API_KEY", "PAYPAL_WEBHOOK_ID", "PAYPAL_ENV", "BRAINTREE_PRIVATE_KEY"] as const;
+const SECRET_KEYS = ["PAYPAL_CLIENT_SECRET", "PAYPAL_CLIENT_ID", "AI_API_KEY", "PAYPAL_WEBHOOK_ID", "BRAINTREE_PRIVATE_KEY"] as const;
 
 /** Strip env values and PEM private keys from any string that might be logged or returned. */
 export function redactSecrets(value: string): string {

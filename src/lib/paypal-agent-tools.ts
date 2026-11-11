@@ -9,7 +9,6 @@
  * returns results stamped `mock: true` with a MOCK notice. Nothing mock is presented as real.
  */
 import { redactSecrets } from "./ai-permissions";
-import { createSignedMandate } from "./engine";
 import { appendEvent } from "./events";
 import { canonicalJson, id, nowIso } from "./ids";
 import { sha256Hex, signPayload } from "./crypto";
@@ -20,23 +19,68 @@ import type { Mandate, PayPalToolCall, PayPalToolReceipt, PolicyCheck, StoreData
 
 export const TOOLKIT_GOAL_ID = "coach_paypal_tools";
 
-/** Minimal allowlisted subset. pay_order / refunds / payouts are deliberately NOT enabled: Coach never moves money. */
-export const ALLOWED_PAYPAL_TOOLS = {
-  create_order: { money: true, label: "Create PayPal order (intent only, no capture)" },
-  get_order: { money: false, label: "Show PayPal order" },
-  create_invoice: { money: true, label: "Create draft PayPal invoice" },
-  list_invoices: { money: false, label: "List PayPal invoices" },
-  show_subscription_details: { money: false, label: "Show PayPal subscription" },
-} as const;
+type ToolKind = "money" | "read" | "mutate" | "invoice" | "plan";
+type ToolSpec = { kind: ToolKind; label: string };
+
+/** Coach's minimal allowlist. pay_order / refunds / payouts are deliberately NOT here: Coach never moves money. */
+export const ALLOWED_PAYPAL_TOOLS: Record<string, ToolSpec> = {
+  create_order: { kind: "money", label: "Create PayPal order (intent only, no capture)" },
+  get_order: { kind: "read", label: "Show PayPal order" },
+  list_invoices: { kind: "read", label: "List PayPal invoices" },
+  show_subscription_details: { kind: "read", label: "Show PayPal subscription" },
+};
+
+/** Owner-only tools used by the Invoices / Plans / Disputes screens (owner role enforced in middleware). */
+export const OWNER_PAYPAL_TOOLS: Record<string, ToolSpec> = {
+  ...ALLOWED_PAYPAL_TOOLS,
+  create_invoice: { kind: "invoice", label: "Create draft PayPal invoice" },
+  send_invoice: { kind: "mutate", label: "Send PayPal invoice" },
+  list_disputes: { kind: "read", label: "List PayPal disputes" },
+  get_dispute: { kind: "read", label: "Show PayPal dispute" },
+  list_subscription_plans: { kind: "read", label: "List PayPal subscription plans" },
+  create_product: { kind: "mutate", label: "Create PayPal catalog product" },
+  create_subscription_plan: { kind: "plan", label: "Create PayPal subscription plan" },
+  cancel_subscription: { kind: "mutate", label: "Cancel PayPal subscription" },
+};
 
 export type AllowedPayPalTool = keyof typeof ALLOWED_PAYPAL_TOOLS;
+
+/** Scenario B subscription guardian cap, applied to new plans (USD per month). */
+export const PLAN_MONTHLY_CAP_USD = 30;
+/** Largest invoice the owner UI may draft without approval. */
+export const INVOICE_CAP_USD = 500;
 
 /** Toolkit configuration: only the actions above are switched on inside the toolkit too. */
 export const TOOLKIT_ACTIONS = {
   orders: { create: true, get: true },
-  invoices: { create: true, list: true },
-  subscriptions: { show: true },
+  invoices: { create: true, list: true, send: true },
+  subscriptions: { show: true, cancel: true },
+  subscriptionPlans: { create: true, list: true },
+  products: { create: true },
+  disputes: { list: true, get: true },
 };
+
+/** Clearly labelled demo disputes shown only when PayPal creds are absent. */
+export const DEMO_DISPUTES = [
+  {
+    dispute_id: "DEMO-PP-D-1001",
+    reason: "MERCHANDISE_OR_SERVICE_NOT_RECEIVED",
+    status: "OPEN",
+    dispute_amount: { currency_code: "USD", value: "12.00" },
+    create_time: "2026-11-09T10:15:00Z",
+    demo: true,
+    label: "DEMO DATA — seeded example, not from PayPal",
+  },
+  {
+    dispute_id: "DEMO-PP-D-1002",
+    reason: "UNAUTHORISED",
+    status: "RESOLVED",
+    dispute_amount: { currency_code: "USD", value: "8.00" },
+    create_time: "2026-11-02T08:40:00Z",
+    demo: true,
+    label: "DEMO DATA — seeded example, not from PayPal",
+  },
+];
 
 type ToolLike = {
   parameters?: { safeParse?: (v: unknown) => { success: boolean; data?: unknown; error?: { message: string } } };
@@ -72,25 +116,73 @@ async function underlyingTools(): Promise<ToolMap> {
   return tools;
 }
 
-function mockResult(tool: string, args: Record<string, unknown>, amount?: number) {
+function mockResult(store: StoreData, tool: string, args: Record<string, unknown>, amount?: number) {
   const base = {
     mock: true,
     notice: "MOCK — PayPal sandbox credentials are not set, so no PayPal API was called.",
   };
+  const now = nowIso();
   switch (tool) {
     case "create_order":
       return { ...base, id: `MOCK-ORDER-${id("tk")}`, status: "MOCK_CREATED", intent: "CAPTURE (toolkit default; AgentPaL never captures from Coach)", amount: amount?.toFixed(2), currency: "USD" };
-    case "create_invoice":
-      return { ...base, id: `MOCK-INV-${id("tk")}`, status: "MOCK_DRAFT", amount: amount?.toFixed(2), currency: "USD" };
+    case "create_invoice": {
+      const recipient = invoiceRecipient(args);
+      const inv = { id: `MOCK-INV-${id("tk")}`, mock: true as const, kind: "invoice" as const, status: "MOCK_DRAFT", amount: amount?.toFixed(2), currency: "USD" as const, recipient, name: String((args.items as Array<{ name?: string }> | undefined)?.[0]?.name || "Invoice"), created_at: now };
+      store.paypal_mock.invoices.push(inv);
+      return { ...base, ...inv };
+    }
+    case "send_invoice": {
+      const inv = store.paypal_mock.invoices.find((i) => i.id === args.invoice_id);
+      if (!inv) return { ...base, error: { message: "MOCK invoice not found" } };
+      inv.status = "MOCK_SENT";
+      return { ...base, id: inv.id, status: inv.status };
+    }
+    case "list_invoices":
+      return { ...base, items: [...store.paypal_mock.invoices].reverse() };
     case "get_order":
       return { ...base, id: String(args.id || ""), status: "MOCK_UNKNOWN" };
-    case "list_invoices":
-      return { ...base, invoices: [] };
     case "show_subscription_details":
       return { ...base, id: String(args.subscription_id || ""), status: "MOCK_UNKNOWN" };
+    case "cancel_subscription":
+      return { ...base, id: String(args.subscription_id || ""), status: "MOCK_CANCELLED" };
+    case "create_product": {
+      const prod = { id: `MOCK-PROD-${id("tk")}`, mock: true as const, kind: "product" as const, status: "MOCK_CREATED", name: String(args.name || "Product"), created_at: now };
+      store.paypal_mock.products.push(prod);
+      return { ...base, ...prod };
+    }
+    case "create_subscription_plan": {
+      const plan = { id: `MOCK-PLAN-${id("tk")}`, mock: true as const, kind: "plan" as const, status: "MOCK_ACTIVE", name: String(args.name || "Plan"), amount: amount?.toFixed(2), currency: "USD" as const, created_at: now };
+      store.paypal_mock.plans.push(plan);
+      return { ...base, ...plan };
+    }
+    case "list_subscription_plans":
+      return { ...base, plans: [...store.paypal_mock.plans].reverse() };
+    case "list_disputes":
+      return { ...base, items: DEMO_DISPUTES };
+    case "get_dispute":
+      return { ...base, ...(DEMO_DISPUTES.find((d) => d.dispute_id === args.dispute_id) || { error: { message: "MOCK dispute not found" } }) };
     default:
       return base;
   }
+}
+
+function invoiceRecipient(args: Record<string, unknown>): string | undefined {
+  const r = (args.primary_recipients as Array<{ billing_info?: { email_address?: string } }> | undefined)?.[0];
+  return r?.billing_info?.email_address;
+}
+
+/** Monthly USD price of a plan from the toolkit's create_subscription_plan arguments. */
+export function planMonthlyUsd(args: Record<string, unknown>): number {
+  const cycles = (args.billing_cycles as Array<Record<string, unknown>> | undefined) || [];
+  const regular = cycles.find((c) => c.tenure_type === "REGULAR") || cycles[0];
+  if (!regular) return NaN;
+  const price = Number((regular.pricing_scheme as { fixed_price?: { value?: unknown } } | undefined)?.fixed_price?.value);
+  const freq = (regular.frequency as { interval_unit?: string; interval_count?: number } | undefined) || {};
+  const count = Number(freq.interval_count ?? 1) || 1;
+  const perMonth: Record<string, number> = { DAY: 365 / 12, WEEK: 52 / 12, MONTH: 1, YEAR: 1 / 12 };
+  const factor = perMonth[String(freq.interval_unit || "MONTH")];
+  if (!factor) return NaN;
+  return round2((price * factor) / count);
 }
 
 /** USD amount a money tool would create. Uses the toolkit's own argument shapes. */
@@ -127,20 +219,28 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
-export function ensureToolkitMandate(store: StoreData): Mandate {
-  const existing = store.mandates.find((m) => m.goal_id === TOOLKIT_GOAL_ID && m.status === "active");
-  if (existing) return existing;
-  return createSignedMandate(store, {
-    goal_id: TOOLKIT_GOAL_ID,
-    title: "Coach PayPal tools (agent-toolkit)",
-    max_total_spend: 100,
-    per_tx_limit: 50,
-    approved_merchants: ["merchant_001", "merchant_002"],
-    allowed_categories: ["api_credits", "domain"],
-    currency: "USD",
-    expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    space: "My Money",
-  });
+/** Finds the user-signed Coach tools mandate. Never creates one: authority comes only from a user click. */
+export function findToolkitMandate(store: StoreData): Mandate | undefined {
+  return store.mandates.find((m) => m.goal_id === TOOLKIT_GOAL_ID && m.status === "active");
+}
+
+/** Every order line must be a catalog product of the merchant at its catalog USD price. */
+function offCatalogItem(merchant: { products: Array<{ name: string; amount: number; currency: string }> }, args: Record<string, unknown>): string | null {
+  const items = Array.isArray(args.items) ? (args.items as Array<Record<string, unknown>>) : [];
+  if (!items.length) return "no items";
+  for (const it of items) {
+    const p = merchant.products.find((x) => x.name === it.name);
+    if (!p) return `"${String(it.name)}" is not in this merchant's catalog`;
+    if (p.currency !== "USD") return `"${p.name}" is priced in ${p.currency}; toolkit orders are USD only`;
+    const cost = Number(it.itemCost);
+    const qty = Number(it.quantity ?? 1);
+    const total = it.itemTotal != null ? Number(it.itemTotal) : cost * qty;
+    if (cost !== p.amount || Math.abs(total - p.amount * qty) > 1e-9 || !Number.isInteger(qty) || qty < 1) {
+      return `"${p.name}" must be USD ${p.amount.toFixed(2)} per unit`;
+    }
+  }
+  if (Number(args.discount ?? 0) !== 0 || Number(args.shippingCost ?? 0) !== 0) return "discounts and shipping are not allowed on agent orders";
+  return null;
 }
 
 function toolkitCommitted(store: StoreData, mandateId: string): number {
@@ -167,7 +267,8 @@ export async function runGuardedPayPalTool(store: StoreData, req: GuardedToolReq
   const call_id = id("ptc");
   const mode = agentToolkitMode();
   const checks: PolicyCheck[] = [];
-  const spec = (ALLOWED_PAYPAL_TOOLS as Record<string, { money: boolean; label: string }>)[req.tool];
+  const allowlist = req.source === "api" ? OWNER_PAYPAL_TOOLS : ALLOWED_PAYPAL_TOOLS;
+  const spec = allowlist[req.tool];
   let decision: PayPalToolCall["decision"] = "EXECUTED";
   let reason = "";
   let amount: number | undefined;
@@ -178,7 +279,7 @@ export async function runGuardedPayPalTool(store: StoreData, req: GuardedToolReq
 
   if (!spec) {
     decision = "BLOCKED";
-    reason = `"${req.tool}" is not on the AgentPaL Guard tool allowlist. Coach may only use: ${Object.keys(ALLOWED_PAYPAL_TOOLS).join(", ")}. Capturing or moving money always needs the human approval path.`;
+    reason = `"${req.tool}" is not on the AgentPaL Guard tool allowlist. Allowed here: ${Object.keys(allowlist).join(", ")}. Capturing or moving money always needs the human approval path.`;
     checks.push({ code: "tool_allowlist", passed: false, detail: reason });
   } else {
     checks.push({ code: "tool_allowlist", passed: true, detail: `${req.tool} is allowlisted (${spec.label}).` });
@@ -191,12 +292,61 @@ export async function runGuardedPayPalTool(store: StoreData, req: GuardedToolReq
     }
   }
 
-  if (decision === "EXECUTED" && spec?.money) {
-    const mandate = ensureToolkitMandate(store);
+  if (decision === "EXECUTED" && spec?.kind === "invoice") {
+    amount = toolAmount(req.tool, req.args);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      decision = "BLOCKED";
+      reason = "Invoice total must be a finite amount greater than zero.";
+    } else if (!invoiceRecipient(req.args)) {
+      decision = "BLOCKED";
+      reason = "An invoice needs a recipient email address.";
+    } else if (amount > INVOICE_CAP_USD) {
+      decision = "NEEDS_APPROVAL";
+      reason = `USD ${amount.toFixed(2)} is over the USD ${INVOICE_CAP_USD} invoice cap. A human must approve.`;
+    } else {
+      reason = `Invoice of USD ${amount.toFixed(2)} is within the USD ${INVOICE_CAP_USD} cap.`;
+    }
+    checks.push({ code: "invoice_cap", passed: decision === "EXECUTED", detail: reason });
+  }
+
+  if (decision === "EXECUTED" && spec?.kind === "plan") {
+    amount = planMonthlyUsd(req.args);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      decision = "BLOCKED";
+      reason = "Plan price must be a finite amount greater than zero with a DAY/WEEK/MONTH/YEAR interval.";
+    } else if (amount > PLAN_MONTHLY_CAP_USD) {
+      decision = "NEEDS_APPROVAL";
+      reason = `USD ${amount.toFixed(2)}/month is over the subscription guardian cap of USD ${PLAN_MONTHLY_CAP_USD}/month (Scenario B). A human must approve.`;
+    } else {
+      reason = `USD ${amount.toFixed(2)}/month is within the subscription guardian cap of USD ${PLAN_MONTHLY_CAP_USD}/month.`;
+    }
+    checks.push({ code: "subscription_guardian_cap", passed: decision === "EXECUTED", detail: reason });
+  }
+
+  if (decision === "EXECUTED" && req.tool === "cancel_subscription") {
+    const why = String((req.args.payload as { reason?: unknown } | undefined)?.reason || "").trim();
+    if (why.length < 3) {
+      decision = "BLOCKED";
+      reason = "Cancelling a subscription needs a reason (at least 3 characters).";
+      checks.push({ code: "reason", passed: false, detail: reason });
+    }
+  }
+
+  if (decision === "EXECUTED" && spec?.kind === "money") {
+    const mandate = findToolkitMandate(store);
     const merchant = store.merchants.find((m) => m.merchant_id === req.merchant_id);
     amount = toolAmount(req.tool, req.args);
     merchantName = merchant?.name;
-    if (!merchant) {
+    const offCatalog = merchant ? offCatalogItem(merchant, req.args) : null;
+    if (!mandate) {
+      decision = "BLOCKED";
+      reason = "No signed Coach PayPal tools mandate. The user must sign one (Coach → PayPal agent tools → Sign mandate); agents cannot create authority.";
+      checks.push({ code: "mandate", passed: false, detail: reason });
+    } else if (merchant && offCatalog) {
+      decision = "BLOCKED";
+      reason = `Amounts must come from the merchant catalog, not the model: ${offCatalog}`;
+      checks.push({ code: "catalog_price", passed: false, detail: reason });
+    } else if (!merchant) {
       decision = "BLOCKED";
       reason = `Unknown merchant "${req.merchant_id || "(none)"}". Money tools must name a merchant from the AgentPaL directory.`;
       checks.push({ code: "merchant", passed: false, detail: reason });
@@ -252,9 +402,12 @@ export async function runGuardedPayPalTool(store: StoreData, req: GuardedToolReq
         if (errObj) throw new Error(`PayPal toolkit error: ${String(errObj.message || "unknown").slice(0, 200)}`);
       } else {
         invoked = true;
-        result = mockResult(req.tool, req.args, amount);
+        result = mockResult(store, req.tool, req.args, amount);
+        const mockErr = (result as { error?: { message?: string } }).error;
+        if (mockErr) throw new Error(String(mockErr.message));
       }
-      if (!reason) reason = `${req.tool} allowed by AgentPaL Guard${mode === "mock" ? " (MOCK result, no PayPal call)" : ""}.`;
+      if (!reason) reason = `${req.tool} allowed by AgentPaL Guard.`;
+      if (mode === "mock") reason += " MOCK result — no PayPal call.";
     } catch (err) {
       decision = "ERROR";
       reason = redactSecrets(err instanceof Error ? err.message : "toolkit call failed").slice(0, 300);
@@ -342,33 +495,24 @@ export function planPayPalToolFromMessage(
   if (/\blist\b.*\binvoices?\b/.test(text)) {
     return { tool: "list_invoices", args: { page: 1, page_size: 10 }, source: "coach-offline" };
   }
-  const amountMatch = message.match(/\$\s?(\d+(?:\.\d{1,2})?)|(\d+(?:\.\d{1,2})?)\s?(?:usd|dollars)/i);
-  if (!amountMatch) return null;
-  const amount = Number(amountMatch[1] || amountMatch[2]);
   const merchant = store.merchants.find((m) => {
     const first = m.name.toLowerCase().split(/\s+/)[0];
     return text.includes(m.name.toLowerCase()) || (first.length > 3 && text.includes(first));
   });
-  const product = merchant?.products[0];
-  const itemName = product?.name || "Item";
   if (/\binvoice/.test(text)) {
-    return {
-      tool: "create_invoice",
-      merchant_id: merchant?.merchant_id,
-      source: "coach-offline",
-      args: {
-        detail: { currency_code: "USD", note: "Draft created by AgentPaL Coach (agent on behalf of user)" },
-        items: [{ name: itemName, quantity: "1", unit_amount: { currency_code: "USD", value: amount.toFixed(2) } }],
-      },
-    };
+    // Coach cannot draft invoices: the amount would be model-chosen. Owner UI only.
+    return { tool: "create_invoice", args: {}, source: "coach-offline" };
   }
+  if (!/\border\b/.test(text) || !merchant) return null;
+  // The amount always comes from the merchant catalog. Any number in the message is ignored.
+  const product = merchant.products.find((p) => p.currency === "USD") || merchant.products[0];
   return {
     tool: "create_order",
-    merchant_id: merchant?.merchant_id,
+    merchant_id: merchant.merchant_id,
     source: "coach-offline",
     args: {
       currencyCode: "USD",
-      items: [{ name: itemName, quantity: 1, itemCost: amount, taxPercent: 0, itemTotal: amount }],
+      items: [{ name: product.name, quantity: 1, itemCost: product.amount, taxPercent: 0, itemTotal: product.amount }],
       notes: "Proposed by AgentPaL Coach; no capture without human approval",
     },
   };

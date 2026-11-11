@@ -680,6 +680,7 @@ export async function runDemoScenario() {
     return {
       goal,
       mandate,
+      mandates: store.mandates,
       plan,
       executions,
       injection,

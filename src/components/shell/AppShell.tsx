@@ -13,6 +13,10 @@ import {
   FileBarChart,
   Settings,
   QrCode,
+  RotateCcw,
+  FileText,
+  ShieldCheck,
+  Code2,
   Search,
   Bell,
   Sun,
@@ -40,6 +44,10 @@ const ICONS: Record<PageId, typeof LayoutDashboard> = {
   agents: Sparkles,
   insights: LineChart,
   reports: FileBarChart,
+  refunds: RotateCcw,
+  invoices: FileText,
+  security: ShieldCheck,
+  developer: Code2,
   settings: Settings,
 };
 

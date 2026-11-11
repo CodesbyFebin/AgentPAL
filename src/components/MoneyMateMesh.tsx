@@ -1,5 +1,6 @@
 "use client";
 
+import { DeveloperScreen, InvoicesScreen, RefundsScreen, SecurityScreen } from "@/components/screens/Phase2Screens";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
 import { budgetProgress } from "@/lib/finance-engine";
@@ -532,6 +533,14 @@ export function MoneyMateMesh() {
         return <ReportsScreen {...screenProps} />;
       case "settings":
         return <SettingsScreen {...screenProps} />;
+      case "refunds":
+        return <RefundsScreen {...screenProps} />;
+      case "invoices":
+        return <InvoicesScreen {...screenProps} />;
+      case "security":
+        return <SecurityScreen {...screenProps} />;
+      case "developer":
+        return <DeveloperScreen {...screenProps} />;
       default:
         return <DashboardScreen {...screenProps} />;
     }
