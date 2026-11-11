@@ -30,6 +30,7 @@ function emptyStore(): StoreData {
     subscriptions: [],
     renewal_reviews: [],
     reservations: [],
+    payment_links: [],
     ai_calls: [],
     subscription_price_history: [],
     recurring_rules: [],
@@ -60,6 +61,7 @@ function hydrateStore(store: StoreData) {
   store.subscriptions ??= [];
   store.renewal_reviews ??= [];
   store.reservations ??= [];
+  store.payment_links ??= [];
   store.ai_calls ??= [];
   store.subscription_price_history ??= [];
   store.recurring_rules ??= [];

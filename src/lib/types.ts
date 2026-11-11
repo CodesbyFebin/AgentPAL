@@ -151,6 +151,7 @@ export interface Payment {
   x402?: { simulated: true; transfer_id: string };
   artifact?: DeliveryArtifact;
   idempotency_key?: string;
+  payment_link_id?: string;
   finance_impact?: FinanceImpact;
   impact_explanation?: string;
   created_at: string;
@@ -492,7 +493,35 @@ export interface RenewalReview {
   intelligence: RenewalIntelligence;
 }
 
+export type PaymentLinkUse = "single" | "multi";
+
+export type PaymentLinkStatus = "active" | "revoked" | "expired" | "exhausted" | "disabled";
+
+export interface PaymentLink {
+  link_id: string;
+  mandate_id: string;
+  goal_id: string;
+  merchant_id?: string;
+  merchant_name?: string;
+  product_sku?: string;
+  description?: string;
+  amount_cap: number;
+  currency: Currency;
+  expires_at: string;
+  use_type: PaymentLinkUse;
+  max_uses: number;
+  use_count: number;
+  status: PaymentLinkStatus;
+  disabled_reason?: "kill_switch" | "mandate_revoked";
+  payments: string[];
+  public_key: string;
+  signature: string;
+  created_at: string;
+  revoked_at?: string;
+}
+
 export interface SpendReservation {
+
   reservation_id: string;
   mandate_id: string;
   intent_key: string;
@@ -602,6 +631,7 @@ export interface StoreData {
   subscriptions: ManagedSubscription[];
   renewal_reviews: RenewalReview[];
   reservations: SpendReservation[];
+  payment_links: PaymentLink[];
   ai_calls: AiCallLog[];
   subscription_price_history: SubscriptionPriceHistoryRow[];
   recurring_rules: RecurringRule[];

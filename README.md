@@ -104,6 +104,7 @@ Braintree uses the official Node SDK: a client token for Drop-in UI, `transactio
 | Webhook signature verification | Real when `PAYPAL_WEBHOOK_ID` is set. Demo replay is labelled because sandbox billing does not fire on cue. |
 | Finance accounts, transactions, budgets, bills, catalog, demo subscriptions | **Seeded demo data**, clearly labelled. Not a bank connection. Not a user's personal PayPal history. |
 | Affordability engine, policy engine, Ed25519 mandates/receipts, hash chain, kill switch, atomic reservation | Real and unit-tested. |
+| Mandate payment links, scan-to-pay QR, receipt settlement timeline | Real and unit-tested. Links are signed, cap/expiry/revoke/kill-switch gated, and they reuse the existing checkout path. The QR encodes an AgentPaL `/pay/<id>` URL and is labelled “Demo QR — opens AgentPaL checkout, not a real UPI request”. Timeline steps use real Braintree statuses when returned; otherwise they are clearly marked simulated. |
 | AI Money Coach | Real when `AI_API_KEY` is set (tool-calling, read-only finance tools + `propose_payment`). Otherwise a labelled offline fallback. |
 | x402 / USDC, zkVM, multi-bank connections, universal subscription discovery, agent marketplace, family permissions | **Not built.** Roadmap only. |
 
@@ -121,11 +122,20 @@ Ideas inspired by [Sure](https://github.com/we-promise/sure) (AGPL-3.0); no code
 
 ## Interface
 
-The app is a 12-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is official seed data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
+The app is a 13-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Payment Links, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is official seed data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
 
-Pages are directly linkable with `?tab=<id>` (for example `?tab=subscriptions`) and appearance with `?appearance=dark` or `?appearance=light`. Press **Ctrl+K** / **⌘K** for the command bar: jump to any page, run the four demo scenarios, reset the demo, switch light/dark or an accent theme, and toggle the kill switch (with a confirm step). Settings also includes a theme picker with Classic Blue plus four gradient presets (Nova Aurora, Midnight Iris, Ocean Glass, Neo Mint). The sidebar uses a frosted-glass treatment.
+Pages are directly linkable with `?tab=<id>` (for example `?tab=subscriptions` or `?tab=links`) and appearance with `?appearance=dark` or `?appearance=light`. Press **Ctrl+K** / **⌘K** for the command bar: jump to any page, run the four demo scenarios, reset the demo, switch light/dark or an accent theme, and toggle the kill switch (with a confirm step). Settings also includes a theme picker with Classic Blue plus four gradient presets (Nova Aurora, Midnight Iris, Ocean Glass, Neo Mint). The sidebar uses a frosted-glass treatment.
 
 Quick-action tiles such as “Split bill” and “Create invoice” are visible as in the mockups but disabled and marked **Not in this demo** — those features are not in the MVP.
+
+
+## Mandate payment links
+
+From an active signed mandate you can issue a shareable payment link (`/pay/<id>`) with an amount cap, an expiry, and single- or multi-use. The link itself is Ed25519-signed and every use is written to the hash-chained audit log. Paying through the link still goes through AgentPaL Guard and the existing Braintree / PayPal / labelled-mock checkout path. Links can be revoked, and the kill switch auto-disables every active link until a human turns it off.
+
+The ₹65,000 NovaBook 14 affordability flow can also generate a **scan-to-pay QR**. That QR encodes the AgentPaL payment-link URL only — not a real UPI VPA. The UI labels it: “Demo QR — opens AgentPaL checkout, not a real UPI request.”
+
+Signed receipts (and the payment cards) show a settlement timeline: **authorized → policy verified → submitted for settlement → settled**. When Braintree returns those statuses they are shown as processor statuses. Sandbox captures that stay at `submitted_for_settlement` are left pending, not pretended to be settled. Mock or otherwise unavailable processor statuses are marked **Simulated**.
 
 ## Setup
 

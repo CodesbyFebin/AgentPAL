@@ -8,6 +8,8 @@ import { draftEvidence } from "./evidence";
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
 import { checkoutRail, paymentMode } from "./payment-mode";
+import { disablePaymentLinksForMandate, publicPaymentLinkView, syncAllPaymentLinks } from "./pay-links";
+import { settlementTimelinesFor } from "./settlement";
 import {
   amountsMatch,
   authorizeReservedPayment,
@@ -104,6 +106,7 @@ export function revokeMandate(store: StoreData, mandateId: string): Mandate {
     goal_id: mandate.goal_id,
     mandate_id: mandate.mandate_id,
   });
+  disablePaymentLinksForMandate(store, mandate.mandate_id);
   return mandate;
 }
 
@@ -671,6 +674,7 @@ export function snapshot() {
     const goal = store.goals[store.goals.length - 1] ?? null;
     const mandate = goal ? store.mandates.find((m) => m.goal_id === goal.goal_id) ?? null : store.mandates.at(-1) ?? null;
     const plan = goal ? store.plans.find((p) => p.goal_id === goal.goal_id) ?? null : store.plans.at(-1) ?? null;
+    syncAllPaymentLinks(store);
     return {
       goal,
       mandate,
@@ -705,6 +709,8 @@ export function snapshot() {
       subscriptions: store.subscriptions,
       renewal_reviews: store.renewal_reviews,
       reservations: store.reservations,
+      payment_links: store.payment_links.map((l) => publicPaymentLinkView(l)),
+      settlement_timelines: settlementTimelinesFor(store.payments, store.verifications, store.events),
       ai_calls: store.ai_calls,
       ai_tool_logs: store.ai_tool_logs ?? store.ai_calls,
       subscription_price_history: store.subscription_price_history ?? [],

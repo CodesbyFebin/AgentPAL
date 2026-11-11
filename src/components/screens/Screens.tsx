@@ -11,6 +11,7 @@ import {
   FileText,
   PiggyBank,
   Check,
+  QrCode,
 } from "lucide-react";
 import { DEMO_AS_OF, DEMO_MONTH, DEMO_USER_NAME } from "@/lib/finance-seed";
 import { budgetProgress, monthlyCashFlow } from "@/lib/finance-engine";
@@ -649,6 +650,7 @@ export function CoachScreen({ state, chat, setChat, messages, analysis, askCoach
             )}
           </Card>
         )}
+        <LaptopScanToPayCard state={state} run={run} />
         <AiCallsPanel calls={state.ai_calls || []} />
       </div>
     </div>
@@ -729,6 +731,7 @@ export function VaultScreen({ state, run }: ScreenProps) {
               {p.rail} {p.braintree?.mode || p.paypal?.mode ? `· ${p.braintree?.mode || p.paypal?.mode}` : ""} {(p.braintree?.settlement_amount ?? p.paypal?.settlement_amount) != null ? `· settled ${formatMoney((p.braintree?.settlement_amount ?? p.paypal?.settlement_amount) as number, "USD")}` : ""}
             </p>
             {(p.braintree?.fx_label || p.paypal?.fx_label) && <p className="mt-1 text-[11px] text-[var(--mm-muted)]">{p.braintree?.fx_label || p.paypal?.fx_label}</p>}
+            <SettlementTimeline steps={(state.settlement_timelines || {})[p.payment_id] || []} compact />
             <div className="mt-2 flex flex-wrap gap-2">
               {p.status === "awaiting_buyer" && p.rail === "braintree_sandbox" && (state.modes.payment || "").startsWith("braintree") && (
                 <BraintreeCheckout
@@ -753,7 +756,7 @@ export function VaultScreen({ state, run }: ScreenProps) {
   );
 }
 
-export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch }: ScreenProps) {
+export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch, setPage }: ScreenProps) {
   const mandates = state.mandates?.length ? state.mandates : state.mandate ? [state.mandate] : [];
   const pending = state.approvals.filter((a) => a.status === "pending");
   return (
@@ -815,9 +818,30 @@ export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch }: Sc
                 Total {formatMoney(m.max_total_spend, m.currency)} · per-tx {formatMoney(m.per_tx_limit ?? m.auto_approve_limit, m.currency)} · min balance {formatMoney(m.minimum_balance ?? 0, m.currency)} · recurring {m.allow_recurring ? "allowed" : "off"}
               </p>
               {m.status === "active" && (
-                <button className="mt-2 text-xs text-[var(--mm-danger)]" onClick={() => run("Revoking mandate…", async () => { await fetchJson(`/api/mandates/${m.mandate_id}/revoke`, { method: "POST" }); })}>
-                  Revoke
-                </button>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  <button
+                    className="text-xs text-[var(--mm-accent)]"
+                    onClick={() =>
+                      run("Creating payment link…", async () => {
+                        await fetchJson("/api/pay-links", {
+                          method: "POST",
+                          body: JSON.stringify({
+                            mandate_id: m.mandate_id,
+                            amount_cap: m.per_tx_limit ?? m.auto_approve_limit ?? m.max_total_spend,
+                            use_type: "single",
+                            merchant_id: m.approved_merchants[0],
+                            description: `Mandate payment link for ${m.title || m.mandate_id}`,
+                          }),
+                        });
+                      }, "links")
+                    }
+                  >
+                    Create payment link
+                  </button>
+                  <button className="text-xs text-[var(--mm-danger)]" onClick={() => run("Revoking mandate…", async () => { await fetchJson(`/api/mandates/${m.mandate_id}/revoke`, { method: "POST" }); })}>
+                    Revoke
+                  </button>
+                </div>
               )}
             </li>
           ))}
@@ -941,8 +965,14 @@ export function ReportsScreen({ state, run, verifyResult, setVerifyResult }: Scr
                 <span className="font-medium">{r.receipt_id}</span>
                 <Badge>{r.outcome}</Badge>
               </div>
-              <p className="mt-1 text-[var(--mm-muted)]">{r.summary}</p>
+              <p className="mt-1 whitespace-pre-wrap text-[var(--mm-muted)]">{r.summary}</p>
               <p className="mt-1 font-mono text-[11px] text-[var(--mm-muted)]">audit {r.audit_hash}</p>
+              {(r.payments || []).map((pid) => (
+                <div key={pid} className="mt-3">
+                  <p className="text-xs font-medium">Settlement timeline · {pid}</p>
+                  <SettlementTimeline steps={(state.settlement_timelines || {})[pid] || []} />
+                </div>
+              ))}
               <button
                 className="mt-2 text-xs text-[var(--mm-accent)]"
                 onClick={() =>
@@ -1044,3 +1074,344 @@ export function SettingsScreen(props: ScreenProps) {
 }
 
 export { paymentModeLabel };
+
+const DEMO_QR_DISCLAIMER = "Demo QR — opens AgentPaL checkout, not a real UPI request";
+
+export function SettlementTimeline({
+  steps,
+  compact = false,
+}: {
+  steps: Array<{
+    id: string;
+    label: string;
+    state: string;
+    at?: string;
+    source: string;
+    simulated: boolean;
+    detail: string;
+    processor_status?: string;
+  }>;
+  compact?: boolean;
+}) {
+  if (!steps.length) return null;
+  return (
+    <ol className={`mt-2 ${compact ? "space-y-1" : "space-y-2"}`}>
+      {steps.map((step, i) => {
+        const tone =
+          step.state === "complete"
+            ? "success"
+            : step.state === "failed"
+              ? "danger"
+              : step.state === "current"
+                ? "warning"
+                : "neutral";
+        return (
+          <li key={step.id} className="flex gap-3">
+            <span
+              className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold"
+              style={{
+                borderColor:
+                  step.state === "complete"
+                    ? "var(--mm-success)"
+                    : step.state === "failed"
+                      ? "var(--mm-danger)"
+                      : "var(--mm-border)",
+                color:
+                  step.state === "complete"
+                    ? "var(--mm-success)"
+                    : step.state === "failed"
+                      ? "var(--mm-danger)"
+                      : "var(--mm-muted)",
+              }}
+            >
+              {step.state === "complete" ? "✓" : step.state === "failed" ? "!" : i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">{step.label}</span>
+                <Badge tone={tone}>{step.state}</Badge>
+                {step.simulated && <Badge tone="warning">Simulated</Badge>}
+                {!step.simulated && step.source !== "policy" && step.state === "complete" && (
+                  <Badge tone="info">{step.source} status</Badge>
+                )}
+              </div>
+              {!compact && (
+                <>
+                  <p className="mt-0.5 text-xs text-[var(--mm-muted)]">{step.detail}</p>
+                  {step.at && (
+                    <p className="text-[11px] text-[var(--mm-muted)]">
+                      {new Date(step.at).toLocaleString("en-IN", { timeZone: "Asia/Calcutta" })} IST
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function LaptopScanToPayCard({ state, run }: { state: Snapshot; run: RunFn }) {
+  const laptopLink = (state.payment_links || []).find(
+    (l) => l.product_sku === "nova_14_65000" && (l.status === "active" || l.status === "disabled"),
+  );
+  return (
+    <Card>
+      <div className="flex items-center gap-2">
+        <QrCode size={18} />
+        <h3 className="font-semibold">Scan-to-pay · NovaBook 14</h3>
+      </div>
+      <p className="mt-1 text-sm text-[var(--mm-muted)]">
+        Encodes an AgentPaL payment-link URL, not a real UPI address. Paying still goes through AgentPaL Guard.
+      </p>
+      {laptopLink ? (
+        <div className="mt-3 flex flex-col items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/pay-links/${encodeURIComponent(laptopLink.link_id)}/qr`}
+            alt="Demo QR for AgentPaL laptop checkout"
+            className="h-44 w-44 rounded-xl border border-[var(--mm-border)] bg-white p-2"
+          />
+          <p className="text-center text-xs font-medium">{DEMO_QR_DISCLAIMER}</p>
+          <Button variant="secondary" href={laptopLink.path || `/pay/${laptopLink.link_id}`}>
+            Open AgentPaL checkout
+          </Button>
+        </div>
+      ) : (
+        <Button
+          className="mt-3"
+          variant="secondary"
+          onClick={() =>
+            run("Creating laptop scan-to-pay request…", async () => {
+              await fetchJson("/api/pay-links", { method: "POST", body: JSON.stringify({ preset: "laptop" }) });
+            })
+          }
+        >
+          Create ₹65,000 scan-to-pay request
+        </Button>
+      )}
+    </Card>
+  );
+}
+
+export function PaymentLinksScreen({ state, run }: ScreenProps) {
+  const mandates = state.mandates?.length ? state.mandates : state.mandate ? [state.mandate] : [];
+  const links = state.payment_links || [];
+  const activeMandates = mandates.filter((m) => m.status === "active");
+  const [mandateId, setMandateId] = useState(activeMandates[0]?.mandate_id || "");
+  const selected = activeMandates.find((m) => m.mandate_id === mandateId) || activeMandates[0];
+  const [cap, setCap] = useState(String(selected?.per_tx_limit ?? selected?.max_total_spend ?? 10));
+  const [useType, setUseType] = useState<"single" | "multi">("single");
+  const [days, setDays] = useState("7");
+  const [merchantId, setMerchantId] = useState(selected?.approved_merchants[0] || "");
+
+  const laptopLink = links.find((l) => l.product_sku === "nova_14_65000");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Payment Links</h2>
+          <p className="mt-1 max-w-2xl text-sm text-[var(--mm-muted)]">
+            Create a shareable, Ed25519-signed link under an existing mandate. Each payment still runs through AgentPaL Guard
+            (cap, expiry, single or multi use, kill switch, and the same checkout path). Links are auto-disabled when the kill
+            switch is engaged.
+          </p>
+        </div>
+        <Button
+          variant="secondary"
+          onClick={() =>
+            run("Creating laptop scan-to-pay request…", async () => {
+              await fetchJson("/api/pay-links", { method: "POST", body: JSON.stringify({ preset: "laptop" }) });
+            })
+          }
+        >
+          Create NovaBook 14 scan-to-pay
+        </Button>
+      </div>
+
+      {laptopLink && (
+        <Card>
+          <div className="grid gap-4 md:grid-cols-[200px,1fr] md:items-center">
+            <div className="flex flex-col items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/pay-links/${encodeURIComponent(laptopLink.link_id)}/qr`}
+                alt="Demo QR for AgentPaL laptop checkout"
+                className="h-48 w-48 rounded-xl border border-[var(--mm-border)] bg-white p-2"
+              />
+              <p className="text-center text-xs font-medium">{DEMO_QR_DISCLAIMER}</p>
+            </div>
+            <div>
+              <h3 className="font-semibold">₹65,000 laptop scan-to-pay</h3>
+              <p className="mt-1 text-sm text-[var(--mm-muted)]">
+                This QR encodes the AgentPaL checkout URL <span className="font-mono">{laptopLink.path || `/pay/${laptopLink.link_id}`}</span>.
+                It is not a UPI VPA and will not open a bank or UPI app as a real collect request.
+              </p>
+              <p className="mt-2 text-sm text-[var(--mm-muted)]">
+                Cap {formatMoney(laptopLink.amount_cap, laptopLink.currency)} · {laptopLink.use_type} use · {laptopLink.status}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button href={laptopLink.path || `/pay/${laptopLink.link_id}`}>Open checkout</Button>
+                {laptopLink.status === "active" && (
+                  <Button
+                    variant="danger"
+                    onClick={() =>
+                      run("Revoking link…", async () => {
+                        await fetchJson(`/api/pay-links/${laptopLink.link_id}/revoke`, { method: "POST" });
+                      })
+                    }
+                  >
+                    Revoke
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <h3 className="font-semibold">New mandate payment link</h3>
+        {activeMandates.length === 0 ? (
+          <p className="mt-2 text-sm text-[var(--mm-muted)]">Run a demo scenario or create a mandate first. Payment links can only be issued from an active signed mandate.</p>
+        ) : (
+          <form
+            className="mt-3 grid gap-3 md:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const mandate = activeMandates.find((m) => m.mandate_id === (mandateId || activeMandates[0].mandate_id)) || activeMandates[0];
+              const expires = new Date(Date.now() + Number(days || 7) * 24 * 60 * 60 * 1000).toISOString();
+              void run("Creating payment link…", async () => {
+                await fetchJson("/api/pay-links", {
+                  method: "POST",
+                  body: JSON.stringify({
+                    mandate_id: mandate.mandate_id,
+                    amount_cap: Number(cap),
+                    use_type: useType,
+                    merchant_id: merchantId || mandate.approved_merchants[0],
+                    expires_at: expires,
+                    description: `Mandate payment link for ${mandate.title || mandate.mandate_id}`,
+                  }),
+                });
+              });
+            }}
+          >
+            <label className="text-sm">
+              Mandate
+              <select
+                className="mt-1 w-full rounded-2xl border border-[var(--mm-border)] bg-[var(--mm-bg)] px-3 py-2 text-sm"
+                value={mandateId || activeMandates[0].mandate_id}
+                onChange={(e) => {
+                  setMandateId(e.target.value);
+                  const m = activeMandates.find((x) => x.mandate_id === e.target.value);
+                  if (m) {
+                    setCap(String(m.per_tx_limit ?? m.max_total_spend));
+                    setMerchantId(m.approved_merchants[0] || "");
+                  }
+                }}
+              >
+                {activeMandates.map((m) => (
+                  <option key={m.mandate_id} value={m.mandate_id}>
+                    {m.title || m.mandate_id} · {formatMoney(m.max_total_spend, m.currency)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              Amount cap
+              <input
+                className="mt-1 w-full rounded-2xl border border-[var(--mm-border)] bg-[var(--mm-bg)] px-3 py-2 text-sm"
+                type="number"
+                min={0}
+                step="0.01"
+                value={cap}
+                onChange={(e) => setCap(e.target.value)}
+              />
+            </label>
+            <label className="text-sm">
+              Use
+              <select
+                className="mt-1 w-full rounded-2xl border border-[var(--mm-border)] bg-[var(--mm-bg)] px-3 py-2 text-sm"
+                value={useType}
+                onChange={(e) => setUseType(e.target.value as "single" | "multi")}
+              >
+                <option value="single">Single use</option>
+                <option value="multi">Multi use (up to 10)</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              Expires in (days)
+              <input
+                className="mt-1 w-full rounded-2xl border border-[var(--mm-border)] bg-[var(--mm-bg)] px-3 py-2 text-sm"
+                type="number"
+                min={1}
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+              />
+            </label>
+            <label className="text-sm md:col-span-2">
+              Merchant (allowlisted)
+              <select
+                className="mt-1 w-full rounded-2xl border border-[var(--mm-border)] bg-[var(--mm-bg)] px-3 py-2 text-sm"
+                value={merchantId || selected?.approved_merchants[0] || ""}
+                onChange={(e) => setMerchantId(e.target.value)}
+              >
+                {(selected?.approved_merchants || []).map((id) => {
+                  const name = state.merchants.find((m) => m.merchant_id === id)?.name || id;
+                  return (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <div className="md:col-span-2">
+              <Button type="submit">Create signed link</Button>
+            </div>
+          </form>
+        )}
+      </Card>
+
+      {links.length === 0 && (
+        <EmptyState title="No payment links yet" body="Create a link from an active mandate, or generate the NovaBook 14 scan-to-pay request." />
+      )}
+      <ul className="space-y-3">
+        {links.map((link) => (
+          <Card key={link.link_id}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-medium">{link.description || link.merchant_name || link.link_id}</p>
+                <p className="mt-1 text-sm text-[var(--mm-muted)]">
+                  Cap {formatMoney(link.amount_cap, link.currency)} · {link.use_type} · used {link.use_count}/{link.max_uses} · expires {new Date(link.expires_at).toLocaleString("en-IN", { timeZone: "Asia/Calcutta" })} IST
+                </p>
+                <p className="mt-1 font-mono text-[11px] text-[var(--mm-muted)]">{link.path || `/pay/${link.link_id}`}</p>
+              </div>
+              <Badge tone={link.status === "active" ? "success" : "danger"}>{link.status}</Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button variant="secondary" href={link.path || `/pay/${link.link_id}`}>
+                Open
+              </Button>
+              {link.status === "active" && (
+                <Button
+                  variant="danger"
+                  onClick={() =>
+                    run("Revoking link…", async () => {
+                      await fetchJson(`/api/pay-links/${link.link_id}/revoke`, { method: "POST" });
+                    })
+                  }
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          </Card>
+        ))}
+      </ul>
+    </div>
+  );
+}

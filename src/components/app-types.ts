@@ -6,10 +6,12 @@ import type {
   Mandate,
   ManagedSubscription,
   Payment,
+  PaymentLink,
   Receipt,
   RenewalReview,
   AiCallLog,
 } from "@/lib/types";
+import type { SettlementStep } from "@/lib/settlement";
 import type { PaymentMode } from "@/lib/payment-mode";
 
 export type PageId =
@@ -19,6 +21,7 @@ export type PageId =
   | "budgets"
   | "coach"
   | "vault"
+  | "links"
   | "agents"
   | "insights"
   | "reports"
@@ -31,6 +34,7 @@ export const PAGES: { id: PageId; label: string; group?: string }[] = [
   { id: "budgets", label: "Budgets" },
   { id: "coach", label: "AI Coach" },
   { id: "vault", label: "Payment Methods" },
+  { id: "links", label: "Payment Links" },
   { id: "agents", label: "Agents" },
   { id: "insights", label: "Insights" },
   { id: "reports", label: "Reports" },
@@ -47,6 +51,8 @@ export type Snapshot = {
   verifications: unknown[];
   receipts: Receipt[];
   events: AuditEvent[];
+  payment_links?: Array<PaymentLink & { url?: string; path?: string; qr_disclaimer?: string }>;
+  settlement_timelines?: Record<string, SettlementStep[]>;
   merchants: { merchant_id: string; name: string; description: string; injection_bait: boolean }[];
   finance: FinanceState;
   subscriptions: ManagedSubscription[];

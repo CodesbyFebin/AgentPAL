@@ -25,6 +25,7 @@ import {
   CoachScreen,
   DashboardScreen,
   InsightsScreen,
+  PaymentLinksScreen,
   ReportsScreen,
   SettingsScreen,
   SubscriptionsScreen,
@@ -159,8 +160,10 @@ export function MoneyMateMesh() {
         method: "POST",
         body: JSON.stringify({ scenario }),
       });
-      if (scenario === "laptop" && res.demo && "verdict" in res.demo) {
-        setAnalysis(res.demo);
+      if (scenario === "laptop" && res.demo) {
+        const demo = res.demo as { analysis?: AffordabilityResult; verdict?: string } & Partial<AffordabilityResult>;
+        const analysis = demo.analysis ?? ("verdict" in demo && demo.verdict ? (demo as AffordabilityResult) : null);
+        if (analysis) setAnalysis(analysis);
         setChat(MONEYMATE_DEMO_PROMPT);
         setMessages((m) => [
           ...m,
@@ -317,6 +320,8 @@ export function MoneyMateMesh() {
         return <CoachScreen {...screenProps} />;
       case "vault":
         return <VaultScreen {...screenProps} />;
+      case "links":
+        return <PaymentLinksScreen {...screenProps} />;
       case "agents":
         return <AgentsScreen {...screenProps} />;
       case "insights":

@@ -1,4 +1,5 @@
 import { appendEvent } from "@/lib/events";
+import { disablePaymentLinksForKillSwitch, reenablePaymentLinksAfterKillSwitch } from "@/lib/pay-links";
 import { ok, readJson } from "@/lib/http";
 import { nowIso } from "@/lib/ids";
 import { updateStore } from "@/lib/store";
@@ -19,6 +20,8 @@ export async function POST(req: Request) {
         : "Kill switch released. Agent activity may resume under the mandate.",
       { kill_switch: active },
     );
+    if (active) disablePaymentLinksForKillSwitch(store);
+    else reenablePaymentLinksAfterKillSwitch(store);
     return store.settings;
   });
   return ok({ kill_switch: settings.kill_switch, kill_switch_at: settings.kill_switch_at });

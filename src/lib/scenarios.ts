@@ -11,6 +11,7 @@ import {
   seedDemoSubscriptions,
   seedSuggestedSubscription,
 } from "./subscriptions";
+import { ensureLaptopPayLink } from "./pay-link-checkout";
 import { checkoutRail, paymentMode } from "./payment-mode";
 import { paypalMode, plannerMode, resetStore, updateStore } from "./store";
 import type { Goal, Plan, PlanStep, StoreData } from "./types";
@@ -295,7 +296,8 @@ export async function runSubscriptionScenario() {
 export async function runLaptopCoachPreview() {
   return updateStore(async (store) => {
     const result = await explainAffordability(store.finance, MONEYMATE_DEMO_PROMPT);
-    return result;
+    const pay_link = ensureLaptopPayLink(store);
+    return { ...result, pay_link };
   });
 }
 
