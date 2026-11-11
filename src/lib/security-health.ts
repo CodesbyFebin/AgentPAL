@@ -8,8 +8,12 @@ import { DEMO_OWNER_VALUE, issueOwnerCookie, resolveRole, roleConfigNote, roleMo
 import { RateLimiter, rateLimitGroup, rbacDecision, ROLE_COOKIE } from "./security";
 
 /** Reads the headers actually registered in next.config.ts and checks the ones we rely on. */
-export async function checkSecurityHeaders(): Promise<{ ok: boolean; missing: string[] }> {
-  const rules = (await nextConfig.headers?.()) ?? [];
+type HeaderRules = Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
+
+export async function checkSecurityHeaders(
+  loadRules: () => Promise<HeaderRules> = async () => ((await nextConfig.headers?.()) ?? []) as HeaderRules,
+): Promise<{ ok: boolean; missing: string[] }> {
+  const rules = await loadRules();
   const all = rules.find((r) => r.source === "/:path*")?.headers ?? [];
   const get = (k: string) => all.find((h) => h.key.toLowerCase() === k.toLowerCase())?.value ?? "";
   const missing: string[] = [];

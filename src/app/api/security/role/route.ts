@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJson } from "@/lib/http";
 import { clientKey, ROLE_COOKIE } from "@/lib/security";
-import { globalPinBackoff, issueOwnerCookie, pinGuard, resolveRole, roleConfigNote, roleMode } from "@/lib/owner-session";
+import { globalPinBackoff, issueOwnerCookie, pinGuard, resolveRole, roleMode } from "@/lib/owner-session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,8 @@ const cookieOpts = { httpOnly: true, sameSite: "strict" as const, secure: proces
 
 export async function GET(req: Request) {
   const { role, mode } = resolveRole(req.headers.get("cookie"));
-  return NextResponse.json({ role, mode, owner_requires_pin: mode !== "demo_toggle", note: roleConfigNote() });
+  // Public: role and mode only. Configuration details stay server-side.
+  return NextResponse.json({ role, mode });
 }
 
 /**

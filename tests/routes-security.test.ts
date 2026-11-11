@@ -160,13 +160,33 @@ describe("RBAC", () => {
 });
 
 describe("rate-limit client key and FX", () => {
-  it("prefers True-Client-IP, else the leftmost VALID X-Forwarded-For IP (Render appends internal hops)", () => {
-    const h = (o: Record<string, string>) => new Headers(o);
-    expect(clientKey(h({ "true-client-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 10.0.0.2" }))).toBe("1.1.1.1");
-    expect(clientKey(h({ "x-forwarded-for": "9.9.9.9, 10.0.0.2" }))).toBe("9.9.9.9");
-    expect(clientKey(h({ "x-forwarded-for": "garbage, 9.9.9.9" }))).toBe("9.9.9.9");
-    expect(clientKey(h({ "true-client-ip": "not-an-ip" }))).toBe("local");
-    expect(clientKey(h({}))).toBe("local");
+  const h = (o: Record<string, string>) => new Headers(o);
+  it("prefers CF-Connecting-IP over True-Client-IP", () => {
+    expect(clientKey(h({ "cf-connecting-ip": "1.1.1.1", "true-client-ip": "2.2.2.2" }))).toBe("1.1.1.1");
+    expect(clientKey(h({ "true-client-ip": "2.2.2.2" }))).toBe("2.2.2.2");
+    expect(clientKey(h({ "cf-connecting-ip": "not-an-ip", "true-client-ip": "2.2.2.2" }))).toBe("2.2.2.2");
+  });
+  it("rotating X-Forwarded-For never changes the bucket", () => {
+    const keys = ["9.9.9.9", "8.8.8.8, 10.0.0.1", "7.7.7.7", "2001:db8::1"].map((xff) => clientKey(h({ "x-forwarded-for": xff, "true-client-ip": "2.2.2.2" })));
+    expect(new Set(keys)).toEqual(new Set(["2.2.2.2"]));
+    const bare = ["9.9.9.9", "8.8.8.8", "1.2.3.4"].map((xff) => clientKey(h({ "x-forwarded-for": xff })));
+    expect(new Set(bare)).toEqual(new Set(["unknown"]));
+  });
+  it("missing edge headers => one shared 'unknown' bucket (and the limiter treats them as one client)", () => {
+    expect(clientKey(h({}))).toBe("unknown");
+    expect(clientKey(h({ "true-client-ip": "garbage" }))).toBe("unknown");
+    const codes = Array.from({ length: 11 }, (_, i) =>
+      middleware(new NextRequest("http://localhost/api/security/role", { method: "POST", headers: { "x-forwarded-for": `198.51.100.${i}` } })).status,
+    );
+    expect(codes[10]).toBe(429);
+  });
+  it("groups IPv6 by /64", () => {
+    const a = clientKey(h({ "cf-connecting-ip": "2001:db8:abcd:12::1" }));
+    const b = clientKey(h({ "cf-connecting-ip": "2001:0db8:abcd:0012:ffff:ffff:ffff:fffe" }));
+    const c = clientKey(h({ "cf-connecting-ip": "2001:db8:abcd:13::1" }));
+    expect(a).toBe("2001:0db8:abcd:0012::/64");
+    expect(b).toBe(a);
+    expect(c).not.toBe(a);
   });
   it("rejects unsupported currencies instead of treating them as USD", () => {
     expect(toUsd(830, "INR")).toBe(10);
@@ -195,9 +215,12 @@ describe("owner sessions and PIN hardening", () => {
     process.env.OWNER_PIN = "short-pin";
     process.env.OWNER_SESSION_SECRET = SECRET;
     expect(roleMode()).toBe("demo_toggle");
-    const r = (await (await roleGET(new Request("http://localhost/api/security/role"))).json()) as { mode: string; note: string };
+    const r = (await (await roleGET(new Request("http://localhost/api/security/role"))).json()) as Record<string, unknown>;
     expect(r.mode).toBe("demo_toggle");
-    expect(r.note).toMatch(/shorter than 12/);
+    // The public role response exposes only role + mode (no config text).
+    expect(Object.keys(r).sort()).toEqual(["mode", "role"]);
+    const { roleConfigNote } = await import("@/lib/owner-session");
+    expect(roleConfigNote()).toMatch(/shorter than 12/);
   });
   it("PIN without OWNER_SESSION_SECRET fails closed: even the right PIN cannot become owner", async () => {
     process.env.OWNER_PIN = PIN;
@@ -247,6 +270,19 @@ describe("other owner-only / explicit-input routes", () => {
 describe("security health score honesty", () => {
   it("header check reads next.config and passes", async () => {
     expect(await checkSecurityHeaders()).toEqual({ ok: true, missing: [] });
+  });
+  it("header check FAILS when any required header is removed or weakened in the config", async () => {
+    const { SECURITY_HEADERS } = await import("@/lib/security");
+    const required = ["Content-Security-Policy", "X-Frame-Options", "X-Content-Type-Options", "Strict-Transport-Security", "Referrer-Policy"];
+    for (const key of required) {
+      const without = SECURITY_HEADERS.filter((x) => x.key !== key);
+      const r = await checkSecurityHeaders(async () => [{ source: "/:path*", headers: without }]);
+      expect(r.ok, key).toBe(false);
+      expect(r.missing).toEqual([key]);
+    }
+    const weak = SECURITY_HEADERS.map((x) => (x.key === "X-Frame-Options" ? { ...x, value: "SAMEORIGIN" } : x));
+    expect((await checkSecurityHeaders(async () => [{ source: "/:path*", headers: weak }])).ok).toBe(false);
+    expect((await checkSecurityHeaders(async () => [])).ok).toBe(false);
   });
   it("demo-toggle mode: RBAC is a FAILED, weighted check and 100 is unreachable", async () => {
     const c = rbacHealthCheck();

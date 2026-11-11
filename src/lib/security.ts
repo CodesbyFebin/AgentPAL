@@ -34,25 +34,61 @@ export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; w
 ];
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-const IPV6 = /^[0-9a-f:]{2,39}$/i;
-export function isValidIp(v: string): boolean {
-  return IPV4.test(v) || (v.includes(":") && IPV6.test(v));
+
+/** Expands an IPv6 address to 8 lowercase 4-digit hextets, or null if invalid. Handles "::" and IPv4 tails. */
+export function expandIpv6(input: string): string[] | null {
+  let v = input.trim().toLowerCase();
+  if (v.startsWith("[") && v.endsWith("]")) v = v.slice(1, -1);
+  v = v.split("%")[0];
+  if (!v.includes(":") || !/^[0-9a-f:.]+$/.test(v)) return null;
+  const tail = v.match(/(\d+\.\d+\.\d+\.\d+)$/);
+  if (tail) {
+    if (!IPV4.test(tail[1])) return null;
+    const o = tail[1].split(".").map(Number);
+    v = v.slice(0, -tail[1].length) + ((o[0] << 8) | o[1]).toString(16) + ":" + ((o[2] << 8) | o[3]).toString(16);
+  }
+  const halves = v.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(":") : [];
+  const rest = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
+  const fill = halves.length === 2 ? 8 - head.length - rest.length : 0;
+  if (fill < 0 || (halves.length === 1 && head.length !== 8)) return null;
+  const parts = [...head, ...Array(fill).fill("0"), ...rest];
+  if (parts.length !== 8 || parts.some((p) => !/^[0-9a-f]{1,4}$/.test(p))) return null;
+  return parts.map((p) => p.padStart(4, "0"));
 }
 
+export function isValidIp(v: string): boolean {
+  return IPV4.test(v) || expandIpv6(v) !== null;
+}
+
+/** Normalised bucket for one IP: IPv4 as-is, IPv6 grouped by its /64 prefix (one host usually owns a /64). */
+export function ipBucket(ip: string): string | null {
+  const v = ip.trim();
+  if (IPV4.test(v)) return v;
+  const h = expandIpv6(v);
+  return h ? `${h.slice(0, 4).join(":")}::/64` : null;
+}
+
+export type ClientIpSource = "cf-connecting-ip" | "true-client-ip" | "unknown";
+
 /**
- * Client key for rate limiting.
- * 1. True-Client-IP — set by Render's edge (Cloudflare) and overwritten there, so the client can't spoof it.
- * 2. Else the LEFTMOST *valid IP* in X-Forwarded-For. Render's proxy appends the real client address, so
- *    the rightmost hop is an internal proxy and would put every user in one bucket. Trade-off: if neither
- *    edge header is trustworthy, a client can prepend a fake leftmost IP to get a fresh bucket; on Render
- *    True-Client-IP is present, so that fallback is only used locally / behind other proxies.
+ * Client key for rate limiting / PIN lockout. Only edge-set headers are trusted:
+ * 1. CF-Connecting-IP, then 2. True-Client-IP (set and overwritten by Render's Cloudflare edge).
+ * X-Forwarded-For is NEVER used (clients can forge it). If neither header is present, every caller shares
+ * one "unknown" bucket — strict, but un-spoofable. IPv6 is grouped by /64.
  */
+export function clientIdentity(headers: { get(name: string): string | null }): { key: string; source: ClientIpSource } {
+  for (const [name, source] of [["cf-connecting-ip", "cf-connecting-ip"], ["true-client-ip", "true-client-ip"]] as const) {
+    const raw = headers.get(name);
+    const bucket = raw ? ipBucket(raw) : null;
+    if (bucket) return { key: bucket, source };
+  }
+  return { key: "unknown", source: "unknown" };
+}
+
 export function clientKey(headers: { get(name: string): string | null }): string {
-  const trueIp = headers.get("true-client-ip")?.trim();
-  if (trueIp && isValidIp(trueIp)) return trueIp;
-  const xff = headers.get("x-forwarded-for");
-  const first = xff?.split(",").map((p) => p.trim()).find((p) => isValidIp(p));
-  return first || "local";
+  return clientIdentity(headers).key;
 }
 
 export class RateLimiter {
