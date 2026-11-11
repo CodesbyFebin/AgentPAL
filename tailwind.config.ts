@@ -7,7 +7,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-geist)", "ui-sans-serif", "system-ui", "sans-serif"],
         display: ["var(--font-geist)", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        mono: ["var(--font-ibm-plex-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       colors: {
         ink: {

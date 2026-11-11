@@ -10,14 +10,28 @@ import {
   DEFAULT_THEME_PREFS,
   THEME_STORAGE_KEY,
   applyThemeToDocument,
+  nextAccentTheme,
   parseThemePrefs,
+  parseThemeSlug,
   type AccentThemeId,
   type Appearance,
 } from "@/lib/ui-themes";
+import {
+  DEFAULT_SPACE,
+  SPACE_STORAGE_KEY,
+  SPACES,
+  parseSpace,
+  spaceToSlug,
+  type MoneySpace,
+} from "@/lib/spaces";
+import { DEFAULT_ZEN_PREFS, ZEN_STORAGE_KEY, parseZenPrefs, shouldZenPause, type ZenPrefs } from "@/lib/zen";
+import { approvablePending, skippedBlocked } from "@/lib/approvals-guard";
 import type { PageId, Snapshot } from "@/components/app-types";
 import { PAGES } from "@/components/app-types";
 import { AppShell, type CommandItem } from "@/components/shell/AppShell";
 import { ConfirmDialog } from "@/components/ui/kit";
+import { ToastHost, type Toast } from "@/components/ui/ToastHost";
+import { ZenPauseDialog, type ZenRequest } from "@/components/ui/ZenPauseDialog";
 import { ApprovalList, DemoDisclaimer } from "@/components/screens/Screens";
 import {
   AgentsScreen,
@@ -47,21 +61,47 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 const PAGE_IDS = new Set<PageId>(PAGES.map((p) => p.id));
 
-function readSearch(): { tab: PageId; appearance: Appearance | null } {
-  if (typeof window === "undefined") return { tab: "dashboard", appearance: null };
+function readSearch(): {
+  tab: PageId;
+  appearance: Appearance | null;
+  theme: AccentThemeId | null;
+  space: MoneySpace | null;
+  zenDemo: boolean;
+  approvalsOpen: boolean;
+} {
+  if (typeof window === "undefined") {
+    return { tab: "dashboard", appearance: null, theme: null, space: null, zenDemo: false, approvalsOpen: false };
+  }
   const params = new URLSearchParams(window.location.search);
   const rawTab = params.get("tab");
   const tab = rawTab && PAGE_IDS.has(rawTab as PageId) ? (rawTab as PageId) : "dashboard";
   const rawApp = params.get("appearance");
   const appearance = rawApp === "dark" || rawApp === "light" ? rawApp : null;
-  return { tab, appearance };
+  const theme = parseThemeSlug(params.get("theme"));
+  const space = parseSpace(params.get("space"));
+  const zenDemo = params.get("zen") === "demo";
+  const approvalsOpen = params.get("approvals") === "open";
+  return { tab, appearance, theme, space, zenDemo, approvalsOpen };
 }
 
-function writeSearch(tab: PageId, appearance: Appearance) {
+function writeSearch(opts: {
+  tab: PageId;
+  appearance: Appearance;
+  themeId: AccentThemeId;
+  space: MoneySpace;
+  zenDemo?: boolean;
+  approvalsOpen?: boolean;
+}) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
-  url.searchParams.set("tab", tab);
-  url.searchParams.set("appearance", appearance);
+  url.searchParams.set("tab", opts.tab);
+  url.searchParams.set("appearance", opts.appearance);
+  url.searchParams.set("theme", opts.themeId);
+  url.searchParams.set("space", spaceToSlug(opts.space));
+  if (opts.zenDemo) url.searchParams.set("zen", "demo");
+  else url.searchParams.delete("zen");
+  if (opts.approvalsOpen) url.searchParams.set("approvals", "open");
+  else url.searchParams.delete("approvals");
   const next = `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
   const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   if (next !== cur) window.history.replaceState(null, "", next);
@@ -80,29 +120,64 @@ export function MoneyMateMesh() {
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [appearance, setAppearanceState] = useState<Appearance>(DEFAULT_THEME_PREFS.appearance);
   const [themeId, setThemeIdState] = useState<AccentThemeId>(DEFAULT_THEME_PREFS.themeId);
+  const [space, setSpaceState] = useState<MoneySpace>(DEFAULT_SPACE);
+  const [zenPrefs, setZenPrefsState] = useState<ZenPrefs>(DEFAULT_ZEN_PREFS);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [zenRequest, setZenRequest] = useState<(ZenRequest & { resolve: (ok: boolean) => void }) | null>(null);
   const [confirm, setConfirm] = useState<null | { kind: "kill" | "reset" }>(null);
 
   useEffect(() => {
     const prefs = parseThemePrefs(typeof window !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null);
+    const storedSpace = parseSpace(typeof window !== "undefined" ? localStorage.getItem(SPACE_STORAGE_KEY) : null);
+    const storedZen = parseZenPrefs(typeof window !== "undefined" ? localStorage.getItem(ZEN_STORAGE_KEY) : null);
     const search = readSearch();
     const appearanceNext = search.appearance ?? prefs.appearance;
+    const themeNext = search.theme ?? prefs.themeId;
+    const spaceNext = search.space ?? storedSpace ?? DEFAULT_SPACE;
     setAppearanceState(appearanceNext);
-    setThemeIdState(prefs.themeId);
-    applyThemeToDocument({ appearance: appearanceNext, themeId: prefs.themeId });
+    setThemeIdState(themeNext);
+    setSpaceState(spaceNext);
+    setZenPrefsState(storedZen);
+    applyThemeToDocument({ appearance: appearanceNext, themeId: themeNext });
     setPageState(search.tab);
-    writeSearch(search.tab, appearanceNext);
+    if (search.approvalsOpen) setApprovalsOpen(true);
+    writeSearch({ tab: search.tab, appearance: appearanceNext, themeId: themeNext, space: spaceNext, zenDemo: search.zenDemo, approvalsOpen: search.approvalsOpen });
+    if (search.zenDemo) {
+      setZenRequest({
+        amount: 65000,
+        currency: "INR",
+        label: "NovaBook 14 laptop · demo pause",
+        demo: true,
+        resolve: () => undefined,
+      });
+    }
   }, []);
 
   useEffect(() => {
     const onPop = () => {
       const search = readSearch();
       setPageState(search.tab);
-      if (search.appearance) {
-        const stored = parseThemePrefs(localStorage.getItem(THEME_STORAGE_KEY));
-        const prefs = { appearance: search.appearance, themeId: stored.themeId };
-        localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(prefs));
-        applyThemeToDocument(prefs);
-        setAppearanceState(search.appearance);
+      const stored = parseThemePrefs(localStorage.getItem(THEME_STORAGE_KEY));
+      const appearanceNext = search.appearance ?? stored.appearance;
+      const themeNext = search.theme ?? stored.themeId;
+      const prefs = { appearance: appearanceNext, themeId: themeNext };
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(prefs));
+      applyThemeToDocument(prefs);
+      setAppearanceState(appearanceNext);
+      setThemeIdState(themeNext);
+      if (search.space) {
+        localStorage.setItem(SPACE_STORAGE_KEY, search.space);
+        setSpaceState(search.space);
+      }
+      setApprovalsOpen(search.approvalsOpen);
+      if (search.zenDemo) {
+        setZenRequest({
+          amount: 65000,
+          currency: "INR",
+          label: "NovaBook 14 laptop · demo pause",
+          demo: true,
+          resolve: () => undefined,
+        });
       }
     };
     window.addEventListener("popstate", onPop);
@@ -115,19 +190,63 @@ export function MoneyMateMesh() {
     applyThemeToDocument(prefs);
   };
 
+  const syncSearch = (overrides: Partial<{ tab: PageId; appearance: Appearance; themeId: AccentThemeId; space: MoneySpace; zenDemo: boolean; approvalsOpen: boolean }> = {}) => {
+    writeSearch({
+      tab: overrides.tab ?? page,
+      appearance: overrides.appearance ?? appearance,
+      themeId: overrides.themeId ?? themeId,
+      space: overrides.space ?? space,
+      zenDemo: overrides.zenDemo ?? Boolean(zenRequest?.demo),
+      approvalsOpen: overrides.approvalsOpen ?? approvalsOpen,
+    });
+  };
+
   const setPage = (p: PageId) => {
     setPageState(p);
-    writeSearch(p, appearance);
+    syncSearch({ tab: p });
   };
 
   const setAppearance = (a: Appearance) => {
     setAppearanceState(a);
     persistTheme(a, themeId);
-    writeSearch(page, a);
+    syncSearch({ appearance: a });
   };
   const setThemeId = (id: AccentThemeId) => {
     setThemeIdState(id);
     persistTheme(appearance, id);
+    syncSearch({ themeId: id });
+  };
+  const setSpace = (s: MoneySpace) => {
+    setSpaceState(s);
+    localStorage.setItem(SPACE_STORAGE_KEY, s);
+    syncSearch({ space: s });
+  };
+  const setZenPrefs = (prefs: ZenPrefs) => {
+    setZenPrefsState(prefs);
+    localStorage.setItem(ZEN_STORAGE_KEY, JSON.stringify(prefs));
+  };
+  const toast = (msg: string, tone: "ok" | "warn" = "ok") => {
+    const id = Date.now() + Math.random();
+    setToasts((list) => [...list, { id, msg, tone }]);
+    window.setTimeout(() => setToasts((list) => list.filter((x) => x.id !== id)), 3200);
+  };
+  const requestZenPause = (amount: number, currency: string, label?: string) => {
+    if (!shouldZenPause(amount, currency, zenPrefs)) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      setZenRequest({ amount, currency, label, resolve });
+    });
+  };
+  const closeZen = (ok: boolean) => {
+    const req = zenRequest;
+    setZenRequest(null);
+    syncSearch({ zenDemo: false });
+    req?.resolve(ok);
+    if (req?.demo) toast(ok ? "Zen demo closed" : "Zen demo cancelled", ok ? "ok" : "warn");
+    else if (!ok) toast("Payment cancelled during the Zen pause", "warn");
+  };
+  const openApprovals = (open: boolean) => {
+    setApprovalsOpen(open);
+    syncSearch({ approvalsOpen: open });
   };
 
   const refresh = useCallback(async () => {
@@ -197,6 +316,33 @@ export function MoneyMateMesh() {
       await api("/api/kill-switch", { method: "POST", body: JSON.stringify({ active: !state.settings.kill_switch }) });
     });
 
+  const approveAll = () => {
+    if (!state) return Promise.resolve();
+    const opts = { merchants: state.merchants, payments: state.payments };
+    const ready = approvablePending(state.approvals, opts);
+    const skipped = skippedBlocked(state.approvals.filter((a) => a.status === "pending"), opts);
+    if (ready.length === 0) {
+      toast(skipped.length ? "Approve all skipped blocked or malicious items. Nothing left to approve." : "Approval queue is already clear", "warn");
+      return Promise.resolve();
+    }
+    return run("Approving ready items…", async () => {
+      let ok = 0;
+      let failed = 0;
+      for (const a of ready) {
+        try {
+          await api(`/api/approvals/${a.approval_id}/approve`, { method: "POST" });
+          ok += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      toast(
+        `Approved ${ok}${skipped.length ? `, skipped ${skipped.length} blocked` : ""}${failed ? `, ${failed} failed` : ""}.`,
+        failed || skipped.length ? "warn" : "ok",
+      );
+    });
+  };
+
   const budgets = useMemo(() => (state ? budgetProgress(state.finance) : []), [state]);
   void budgets;
 
@@ -228,6 +374,12 @@ export function MoneyMateMesh() {
     onToggleKillSwitch: () => setConfirm({ kind: "kill" }),
     onResetDemo: () => setConfirm({ kind: "reset" }),
     setPage,
+    space,
+    setSpace,
+    toast,
+    requestZenPause,
+    zenPrefs,
+    setZenPrefs,
   };
 
   const commandItems: CommandItem[] = [
@@ -299,12 +451,62 @@ export function MoneyMateMesh() {
       group: "Theme",
       run: () => setAppearance(appearance === "dark" ? "light" : "dark"),
     },
+    {
+      id: "toggle-theme",
+      label: "Toggle Theme",
+      hint: ACCENT_THEMES[nextAccentTheme(themeId)].name,
+      group: "Theme",
+      run: () => {
+        const next = nextAccentTheme(themeId);
+        setThemeId(next);
+        toast(`Theme: ${ACCENT_THEMES[next].name}`);
+      },
+    },
     ...Object.values(ACCENT_THEMES).map((t) => ({
       id: `theme-${t.id}`,
       label: `Theme: ${t.name}`,
       hint: "Accent preset",
       group: "Theme",
       run: () => setThemeId(t.id),
+    })),
+    {
+      id: "zen-mode",
+      label: zenPrefs.enabled ? "Zen Mode (on)" : "Zen Mode (off)",
+      hint: "Pause before large payments",
+      group: "Theme",
+      run: () => {
+        const next = { ...zenPrefs, enabled: !zenPrefs.enabled };
+        setZenPrefs(next);
+        toast(next.enabled ? "Zen Mode on — pause before large payments" : "Zen Mode off");
+      },
+    },
+    {
+      id: "ask-coach",
+      label: "Ask Coach",
+      hint: "Open AI Coach",
+      group: "Pages",
+      run: () => setPage("coach"),
+    },
+    {
+      id: "approve-pending",
+      label: "Approve pending",
+      hint: `${approvablePending(state.approvals, { merchants: state.merchants, payments: state.payments }).length} ready`,
+      group: "Approvals",
+      needsConfirm: true,
+      confirmTitle: "Approve all ready items?",
+      confirmBody: "Blocked or malicious items are skipped. Each remaining approval is sent to AgentPaL Guard's existing approve endpoint.",
+      confirmLabel: "Approve ready items",
+      run: () => { void approveAll(); },
+    },
+    ...SPACES.map((s) => ({
+      id: `space-${s}`,
+      label: `Switch space: ${s}`,
+      hint: s,
+      group: "Spaces",
+      run: () => {
+        setSpace(s);
+        toast(s === "My Money" ? "My Money — showing every space" : `${s} space`);
+      },
     })),
   ];
 
@@ -346,12 +548,29 @@ export function MoneyMateMesh() {
         appearance={appearance}
         setAppearance={setAppearance}
         onOpenTheme={() => setPage("settings")}
+        space={space}
+        setSpace={(s) => { setSpace(s); toast(s === "My Money" ? "My Money — showing every space" : `${s} space`); }}
+        themeId={themeId}
+        onCycleTheme={() => {
+          const next = nextAccentTheme(themeId);
+          setThemeId(next);
+          toast(`Theme: ${ACCENT_THEMES[next].name}`);
+        }}
         commandItems={commandItems}
         paletteOpen={paletteOpen}
         setPaletteOpen={setPaletteOpen}
         approvalsOpen={approvalsOpen}
-        setApprovalsOpen={setApprovalsOpen}
-        approvalPanel={<ApprovalList pending={state.approvals.filter((a) => a.status === "pending")} run={run} />}
+        setApprovalsOpen={openApprovals}
+        approvalPanel={
+          <ApprovalList
+            pending={state.approvals.filter((a) => a.status === "pending")}
+            run={run}
+            merchants={state.merchants}
+            payments={state.payments}
+            toast={toast}
+            onApproveAll={() => { void approveAll(); }}
+          />
+        }
       >
         <div className="mb-4">
           <DemoDisclaimer />
@@ -378,6 +597,14 @@ export function MoneyMateMesh() {
           else void doKill();
         }}
       />
+      <ZenPauseDialog
+        open={Boolean(zenRequest)}
+        request={zenRequest}
+        prefs={zenPrefs}
+        onConfirm={() => closeZen(true)}
+        onCancel={() => closeZen(false)}
+      />
+      <ToastHost toasts={toasts} />
     </>
   );
 }

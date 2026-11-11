@@ -31,6 +31,7 @@ import {
 } from "./store";
 import { contractForStep, deliverArtifact, verifyArtifact } from "./verify";
 import { settleSimulatedX402 } from "./x402";
+import { spaceForMandate } from "./spaces";
 import type {
   Approval,
   Goal,
@@ -61,6 +62,7 @@ export function createSignedMandate(
     minimum_balance?: number;
     currency?: Mandate["currency"];
     expires_at?: string;
+    space?: Mandate["space"];
   },
 ): Mandate {
   const expires_at =
@@ -83,6 +85,7 @@ export function createSignedMandate(
     status: "active",
     signed_at: nowIso(),
     public_key: store.settings.signing.publicKeyPem,
+    space: input.space || spaceForMandate({ title: input.title, allowed_categories: input.allowed_categories }),
   };
   const signature = signPayload(mandateSigningPayload(unsigned), store.settings.signing.privateKeyPem);
   const mandate: Mandate = { ...unsigned, signature };

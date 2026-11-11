@@ -24,9 +24,10 @@ import {
 import { DEMO_USER_NAME } from "@/lib/finance-seed";
 import type { PageId, Snapshot } from "@/components/app-types";
 import { PAGES } from "@/components/app-types";
-import { Badge, Button, ConfirmDialog, LogoMark } from "@/components/ui/kit";
+import { Badge, Button, LogoMark } from "@/components/ui/kit";
 import { paymentModeLabel } from "@/components/screens/Screens";
-import type { AccentThemeId, Appearance } from "@/lib/ui-themes";
+import { ACCENT_THEMES, type AccentThemeId, type Appearance } from "@/lib/ui-themes";
+import { SPACE_META, SPACES, type MoneySpace } from "@/lib/spaces";
 
 const ICONS: Record<PageId, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
@@ -73,6 +74,10 @@ export function AppShell({
   approvalsOpen,
   setApprovalsOpen,
   approvalPanel,
+  space,
+  setSpace,
+  themeId,
+  onCycleTheme,
 }: {
   page: PageId;
   setPage: (p: PageId) => void;
@@ -83,6 +88,10 @@ export function AppShell({
   appearance: Appearance;
   setAppearance: (a: Appearance) => void;
   onOpenTheme: () => void;
+  space: MoneySpace;
+  setSpace: (s: MoneySpace) => void;
+  themeId: AccentThemeId;
+  onCycleTheme: () => void;
   commandItems: CommandItem[];
   paletteOpen: boolean;
   setPaletteOpen: (v: boolean) => void;
@@ -138,6 +147,27 @@ export function AppShell({
             );
           })}
         </nav>
+        <div className="border-t border-white/10 px-4 py-3">
+          <p className="px-1 text-[11px] uppercase tracking-[0.18em] text-[var(--mm-sidebar-muted)]">Spaces</p>
+          <div className="mt-2 flex flex-col gap-1">
+            {SPACES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSpace(s)}
+                className="mm-focus flex items-center gap-2 rounded-xl px-3 py-2 text-left text-[13px]"
+                style={{
+                  background: space === s ? "rgba(255,255,255,0.12)" : "transparent",
+                  border: space === s ? "1px solid rgba(255,255,255,0.18)" : "1px solid transparent",
+                }}
+              >
+                <span aria-hidden="true">{SPACE_META[s].icon}</span>
+                <span className="min-w-0 flex-1 truncate">{s}</span>
+                {space === s && <span className="text-[10px] tracking-wide text-white/80">LIVE</span>}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="border-t border-white/10 px-4 py-4">
           <div
             className="rounded-2xl p-3"
@@ -185,9 +215,19 @@ export function AppShell({
           <button type="button" className="mm-focus relative rounded-full p-2" aria-label="Approvals" onClick={() => setApprovalsOpen(true)}>
             <Bell size={18} />
             {pending.length > 0 && (
-              <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-rose-500" />
+              <span className="absolute -right-0.5 -top-0.5 min-w-[16px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-semibold text-white">
+                {pending.length}
+              </span>
             )}
           </button>
+          <button
+            type="button"
+            className="mm-focus h-8 w-8 shrink-0 rounded-full border-2 border-white/40"
+            aria-label={`Cycle theme (now ${ACCENT_THEMES[themeId].name})`}
+            title={ACCENT_THEMES[themeId].name}
+            onClick={onCycleTheme}
+            style={{ background: `linear-gradient(120deg,${ACCENT_THEMES[themeId].accent},${ACCENT_THEMES[themeId].accent2})` }}
+          />
           <button
             type="button"
             className="mm-focus rounded-full p-2"
@@ -244,6 +284,17 @@ export function AppShell({
                 onClick={() => { setPage(p.id); setMobileNav(false); }}
               >
                 {p.label}
+              </button>
+            ))}
+            <p className="mt-4 px-3 text-[11px] uppercase tracking-[0.18em] text-[var(--mm-sidebar-muted)]">Spaces</p>
+            {SPACES.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-[var(--mm-sidebar-text)]"
+                onClick={() => { setSpace(s); setMobileNav(false); }}
+              >
+                <span>{SPACE_META[s].icon}</span> {s}
               </button>
             ))}
           </div>

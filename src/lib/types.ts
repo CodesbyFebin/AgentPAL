@@ -54,6 +54,8 @@ export interface Mandate {
   public_key: string;
   signature: string;
   revoked_at?: string;
+  /** Optional UI space for the sidebar filter. Not part of policy evaluation. */
+  space?: "My Money" | "Family" | "Business" | "Focus";
 }
 
 export interface PlanStep {
@@ -293,6 +295,7 @@ export interface LedgerTxn {
   demo: boolean;
   source: "seed" | "paypal_purchase";
   payment_id?: string;
+  space?: "My Money" | "Family" | "Business" | "Focus";
 }
 
 export interface MonthlyBudget {

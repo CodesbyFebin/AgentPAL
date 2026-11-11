@@ -46,10 +46,13 @@ export function BraintreeCheckout({
   paymentId,
   amountUsd,
   onComplete,
+  onBeforePay,
 }: {
   paymentId: string;
   amountUsd: number;
   onComplete: () => Promise<void> | void;
+  /** Return false to abort before the nonce is requested. Used for the Zen pause. */
+  onBeforePay?: () => Promise<boolean> | boolean;
 }) {
   const containerId = `bt-dropin-${paymentId}`;
   const instanceRef = useRef<DropinInstance | null>(null);
@@ -97,6 +100,13 @@ export function BraintreeCheckout({
     setBusy(true);
     setError(null);
     try {
+      if (onBeforePay) {
+        const allowed = await onBeforePay();
+        if (!allowed) {
+          setBusy(false);
+          return;
+        }
+      }
       const payload = await instanceRef.current.requestPaymentMethod();
       const res = await fetch(`/api/payments/${paymentId}/authorize`, {
         method: "POST",

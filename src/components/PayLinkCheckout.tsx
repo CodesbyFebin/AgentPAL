@@ -9,6 +9,8 @@ const DEMO_QR_DISCLAIMER = "Demo QR — opens AgentPaL checkout, not a real UPI 
 import type { Payment, PaymentLink, PolicyDecision } from "@/lib/types";
 import type { PaymentMode } from "@/lib/payment-mode";
 import { applyThemeToDocument, DEFAULT_THEME_PREFS, parseThemePrefs, THEME_STORAGE_KEY } from "@/lib/ui-themes";
+import { DEFAULT_ZEN_PREFS, ZEN_STORAGE_KEY, parseZenPrefs, shouldZenPause } from "@/lib/zen";
+import { ZenPauseDialog, type ZenRequest } from "@/components/ui/ZenPauseDialog";
 
 type LinkView = PaymentLink & { url?: string; path?: string; qr_disclaimer?: string };
 
@@ -20,6 +22,13 @@ export function PayLinkCheckout({ linkId }: { linkId: string }) {
   const [payment, setPayment] = useState<Payment | null>(null);
   const [decision, setDecision] = useState<PolicyDecision | null>(null);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | null>(null);
+  const [zenPrefs] = useState(() => parseZenPrefs(typeof window !== "undefined" ? localStorage.getItem(ZEN_STORAGE_KEY) : null) ?? DEFAULT_ZEN_PREFS);
+  const [zenRequest, setZenRequest] = useState<(ZenRequest & { resolve: (ok: boolean) => void }) | null>(null);
+
+  const requestZenPause = (amount: number, currency: string, label?: string) => {
+    if (!shouldZenPause(amount, currency, zenPrefs)) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => setZenRequest({ amount, currency, label, resolve }));
+  };
 
   useEffect(() => {
     const prefs = parseThemePrefs(typeof window !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null);
@@ -72,6 +81,11 @@ export function PayLinkCheckout({ linkId }: { linkId: string }) {
     setBusy(true);
     setError(null);
     try {
+      const ok = await requestZenPause(payment.amount, payment.currency, payment.merchant_name);
+      if (!ok) {
+        setBusy(false);
+        return;
+      }
       const res = await fetch(`/api/payments/${payment.payment_id}/simulate-buyer`, { method: "POST" });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Simulate failed");
@@ -160,6 +174,7 @@ export function PayLinkCheckout({ linkId }: { linkId: string }) {
                 <BraintreeCheckout
                   paymentId={payment.payment_id}
                   amountUsd={payment.braintree?.settlement_amount ?? (payment.currency === "INR" ? payment.amount / 83 : payment.amount)}
+                  onBeforePay={() => requestZenPause(payment.amount, payment.currency, payment.merchant_name)}
                   onComplete={async () => {
                     const res = await fetch(`/api/payments/${payment.payment_id}/authorize`, { method: "GET" }).catch(() => null);
                     void res;
@@ -183,6 +198,21 @@ export function PayLinkCheckout({ linkId }: { linkId: string }) {
       <p className="mt-6 text-center text-xs text-[var(--mm-muted)]">
         <a className="underline" href="/?tab=links">Back to AgentPaL payment links</a>
       </p>
+      <ZenPauseDialog
+        open={Boolean(zenRequest)}
+        request={zenRequest}
+        prefs={zenPrefs}
+        onConfirm={() => {
+          const req = zenRequest;
+          setZenRequest(null);
+          req?.resolve(true);
+        }}
+        onCancel={() => {
+          const req = zenRequest;
+          setZenRequest(null);
+          req?.resolve(false);
+        }}
+      />
     </main>
   );
 }

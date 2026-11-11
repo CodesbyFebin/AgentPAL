@@ -20,6 +20,9 @@ import { annualizedDelta, lifecycleOf, raisedThisYear } from "@/lib/subscription
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
 import { BraintreeCheckout } from "@/components/BraintreeCheckout";
 import { ACCENT_THEMES, type AccentThemeId, type Appearance } from "@/lib/ui-themes";
+import { matchesSpace, SPACE_META, type MoneySpace } from "@/lib/spaces";
+import type { ZenPrefs } from "@/lib/zen";
+import { approvablePending, skippedBlocked } from "@/lib/approvals-guard";
 import type { AffordabilityResult, Approval, AiCallLog, LedgerTxn } from "@/lib/types";
 import type { PageId, RunFn, Snapshot } from "@/components/app-types";
 import {
@@ -53,6 +56,12 @@ export type ScreenProps = {
   onToggleKillSwitch: () => void;
   onResetDemo: () => void;
   setPage: (p: PageId) => void;
+  space: MoneySpace;
+  setSpace: (s: MoneySpace) => void;
+  toast: (msg: string, tone?: "ok" | "warn") => void;
+  requestZenPause: (amount: number, currency: string, label?: string) => Promise<boolean>;
+  zenPrefs: ZenPrefs;
+  setZenPrefs: (prefs: ZenPrefs) => void;
 };
 
 function asOfLabel() {
@@ -132,6 +141,7 @@ export function DashboardScreen({
   setPage,
   runScenario,
   analysis,
+  space,
 }: ScreenProps) {
   const flow = monthlyCashFlow(state.finance);
   const budgets = budgetProgress(state.finance);
@@ -144,7 +154,10 @@ export function DashboardScreen({
   const limit = budgets.reduce((s, b) => s + b.monthly_limit, 0);
   const onTrack = limit ? Math.round(((limit - spent) / limit) * 100) : 0;
   const chart = dailyCumulativeSeries(state.finance.transactions);
-  const recent = [...state.finance.transactions].sort((a, b) => b.posted_at.localeCompare(a.posted_at)).slice(0, 5);
+  const recent = [...state.finance.transactions]
+    .filter((tx) => matchesSpace(tx.space, space))
+    .sort((a, b) => b.posted_at.localeCompare(a.posted_at))
+    .slice(0, 5);
   const pending = state.approvals.filter((a) => a.status === "pending");
   const seedSubs = state.finance.transactions.filter((t) => t.category === "Entertainment" && t.amount < 0);
   const uniqueEnt = new Map<string, LedgerTxn>();
@@ -363,7 +376,7 @@ export function DashboardScreen({
   );
 }
 
-export function TransactionsScreen({ state }: ScreenProps) {
+export function TransactionsScreen({ state, space }: ScreenProps) {
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("all");
   const [range, setRange] = useState("all");
@@ -372,6 +385,7 @@ export function TransactionsScreen({ state }: ScreenProps) {
     return [...state.finance.transactions]
       .sort((a, b) => b.posted_at.localeCompare(a.posted_at))
       .filter((t) => {
+        if (!matchesSpace(t.space, space)) return false;
         if (cat !== "all" && t.category !== cat) return false;
         if (range === "month" && monthKey(t.posted_at) !== DEMO_MONTH) return false;
         if (range === "90d") {
@@ -384,14 +398,14 @@ export function TransactionsScreen({ state }: ScreenProps) {
         }
         return true;
       });
-  }, [state.finance.transactions, q, cat, range]);
+  }, [state.finance.transactions, q, cat, range, space]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-xl font-semibold">Transactions</h2>
-          <p className="text-sm text-[var(--mm-muted)]">Evidence browser for the seed ledger and AgentPaL Guard payments. Every row is labelled demo data.</p>
+          <p className="text-sm text-[var(--mm-muted)]">Evidence browser for the seed ledger and AgentPaL Guard payments. Showing {space === "My Money" ? "all spaces" : `${space} only`}. Every row is labelled demo data.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -420,7 +434,7 @@ export function TransactionsScreen({ state }: ScreenProps) {
               <div className="min-w-0">
                 <p className="font-medium">{t.merchant}</p>
                 <p className="text-xs text-[var(--mm-muted)]">
-                  {t.category} · {dayKey(t.posted_at)} · {t.account_id} · {t.source} {t.demo ? "· demo" : ""}
+                  {t.space ? `${SPACE_META[t.space].icon} ${t.space} · ` : ""}{t.category} · {dayKey(t.posted_at)} · {t.account_id} · {t.source} {t.demo ? "· demo" : ""}
                 </p>
                 {t.note && <p className="text-xs text-[var(--mm-muted)]">{t.note}</p>}
               </div>
@@ -683,7 +697,7 @@ function AiCallsPanel({ calls }: { calls: AiCallLog[] }) {
   );
 }
 
-export function VaultScreen({ state, run }: ScreenProps) {
+export function VaultScreen({ state, run, requestZenPause }: ScreenProps) {
   const info = paymentModeLabel(state);
   return (
     <div className="space-y-4">
@@ -737,6 +751,7 @@ export function VaultScreen({ state, run }: ScreenProps) {
                 <BraintreeCheckout
                   paymentId={p.payment_id}
                   amountUsd={p.braintree?.settlement_amount ?? (p.currency === "INR" ? p.amount / 83 : p.amount)}
+                  onBeforePay={() => requestZenPause(p.amount, p.currency, p.merchant_name)}
                   onComplete={() => run("Refreshing after sandbox payment…", async () => undefined)}
                 />
               )}
@@ -744,7 +759,11 @@ export function VaultScreen({ state, run }: ScreenProps) {
                 <Button variant="secondary" href={p.paypal.approve_url}>Open PayPal approval</Button>
               )}
               {p.status === "awaiting_buyer" && (state.modes.payment || state.modes.paypal) === "mock" && (
-                <Button onClick={() => run("Simulating buyer approval…", async () => { await fetchJson(`/api/payments/${p.payment_id}/simulate-buyer`, { method: "POST" }); })}>
+                <Button onClick={() => run("Simulating buyer approval…", async () => {
+                  const ok = await requestZenPause(p.amount, p.currency, p.merchant_name);
+                  if (!ok) return;
+                  await fetchJson(`/api/payments/${p.payment_id}/simulate-buyer`, { method: "POST" });
+                })}>
                   Simulate sandbox approval
                 </Button>
               )}
@@ -756,8 +775,9 @@ export function VaultScreen({ state, run }: ScreenProps) {
   );
 }
 
-export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch, setPage }: ScreenProps) {
-  const mandates = state.mandates?.length ? state.mandates : state.mandate ? [state.mandate] : [];
+export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch, setPage, space }: ScreenProps) {
+  const mandates = (state.mandates?.length ? state.mandates : state.mandate ? [state.mandate] : [])
+    .filter((m) => matchesSpace(m.space, space));
   const pending = state.approvals.filter((a) => a.status === "pending");
   return (
     <div className="space-y-4">
@@ -851,24 +871,68 @@ export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch, setP
   );
 }
 
-export function ApprovalList({ pending, run }: { pending: Approval[]; run: RunFn }) {
+export function ApprovalList({
+  pending,
+  run,
+  merchants,
+  payments,
+  toast,
+  onApproveAll,
+}: {
+  pending: Approval[];
+  run: RunFn;
+  merchants?: Array<{ merchant_id: string; name: string; injection_bait: boolean }>;
+  payments?: Array<{ payment_id: string; status: string; merchant_id?: string }>;
+  toast?: (msg: string, tone?: "ok" | "warn") => void;
+  onApproveAll?: () => void;
+}) {
+  const opts = { merchants, payments };
+  const ready = approvablePending(pending, opts);
+  const blocked = skippedBlocked(pending, opts);
   return (
-    <ul className="mt-3 space-y-3">
-      {pending.map((a) => (
-        <li key={a.approval_id} className="rounded-2xl border border-[var(--mm-border)] p-3">
-          <p className="font-medium">{a.merchant_name} · {formatMoney(a.amount, a.currency)}</p>
-          <p className="mt-1 text-sm text-[var(--mm-muted)]">{a.reason}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button onClick={() => run("Approving…", async () => { await fetchJson(`/api/approvals/${a.approval_id}/approve`, { method: "POST" }); }, a.kind === "renewal" ? "subscriptions" : "vault")}>
-              {a.kind === "renewal" ? "Approve new price" : "Approve"}
-            </Button>
-            <Button variant="secondary" onClick={() => run("Denying…", async () => { await fetchJson(`/api/approvals/${a.approval_id}/deny`, { method: "POST" }); }, a.kind === "renewal" ? "subscriptions" : undefined)}>
-              {a.kind === "renewal" ? "Decline and cancel via PayPal" : "Deny"}
-            </Button>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <div>
+      <ul className="mt-3 space-y-3">
+        {pending.map((a) => {
+          const blockedItem = blocked.some((b) => b.approval_id === a.approval_id);
+          return (
+            <li key={a.approval_id} className="rounded-2xl border border-[var(--mm-border)] p-3">
+              <p className="font-medium">{a.merchant_name} · {formatMoney(a.amount, a.currency)}</p>
+              <p className="mt-1 text-sm text-[var(--mm-muted)]">{a.reason}</p>
+              {a.kind === "renewal" && <p className="mt-1 text-[11px] uppercase tracking-wide text-[var(--mm-muted)]">Renewal · step-up</p>}
+              {a.kind !== "renewal" && <p className="mt-1 text-[11px] uppercase tracking-wide text-[var(--mm-muted)]">Ask-first / step-up</p>}
+              {blockedItem && <p className="mt-1 text-xs text-[var(--mm-danger)]">Blocked or malicious — Approve all will skip this item.</p>}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  disabled={blockedItem}
+                  onClick={() => run("Approving…", async () => {
+                    await fetchJson(`/api/approvals/${a.approval_id}/approve`, { method: "POST" });
+                    toast?.(`Approved ${a.merchant_name}`);
+                  }, a.kind === "renewal" ? "subscriptions" : "vault")}
+                >
+                  {a.kind === "renewal" ? "Approve new price" : "Approve"}
+                </Button>
+                <Button variant="secondary" onClick={() => run("Denying…", async () => {
+                  await fetchJson(`/api/approvals/${a.approval_id}/deny`, { method: "POST" });
+                  toast?.(`Declined ${a.merchant_name}`, "warn");
+                }, a.kind === "renewal" ? "subscriptions" : undefined)}>
+                  {a.kind === "renewal" ? "Decline and cancel via PayPal" : "Deny"}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {pending.length > 0 && (
+        <Button
+          className="mt-4 w-full"
+          variant="secondary"
+          disabled={ready.length === 0}
+          onClick={onApproveAll}
+        >
+          Approve all ({ready.length} ready{blocked.length ? `, ${blocked.length} skipped` : ""})
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -1016,7 +1080,7 @@ function csv(value: string) {
 }
 
 export function SettingsScreen(props: ScreenProps) {
-  const { state, appearance, themeId, setAppearance, setThemeId, onToggleKillSwitch, onResetDemo, onOpenCommand } = props;
+  const { state, appearance, themeId, setAppearance, setThemeId, onToggleKillSwitch, onResetDemo, onOpenCommand, zenPrefs, setZenPrefs } = props;
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold">Settings</h2>
@@ -1065,8 +1129,64 @@ export function SettingsScreen(props: ScreenProps) {
           </div>
         </Card>
         <Card>
+          <h3 className="font-semibold">Zen pause</h3>
+          <p className="mt-1 text-sm text-[var(--mm-muted)]">
+            A breathing countdown before any payment at or above your threshold. Cancel aborts the payment. Policy checks still run afterwards.
+          </p>
+          <label className="mt-3 flex items-center justify-between gap-3 text-sm">
+            <span>Zen Mode</span>
+            <button
+              type="button"
+              className="h-6 w-11 rounded-full p-0.5"
+              style={{ background: zenPrefs.enabled ? "var(--mm-accent)" : "var(--mm-border)" }}
+              aria-pressed={zenPrefs.enabled}
+              onClick={() => setZenPrefs({ ...zenPrefs, enabled: !zenPrefs.enabled })}
+            >
+              <span className="block h-5 w-5 rounded-full bg-white transition" style={{ marginLeft: zenPrefs.enabled ? 20 : 0 }} />
+            </button>
+          </label>
+          <label className="mt-3 block text-sm">
+            Threshold (INR)
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={zenPrefs.thresholdInr}
+              onChange={(e) => setZenPrefs({ ...zenPrefs, thresholdInr: Math.max(0, Number(e.target.value) || 0) })}
+              className="mt-1 w-full rounded-xl border border-[var(--mm-border)] bg-[var(--mm-surface)] px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="mt-3 block text-sm">
+            Countdown (seconds)
+            <input
+              type="number"
+              min={1}
+              max={30}
+              value={zenPrefs.seconds}
+              onChange={(e) => setZenPrefs({ ...zenPrefs, seconds: Math.max(1, Math.min(30, Number(e.target.value) || 5)) })}
+              className="mt-1 w-full rounded-xl border border-[var(--mm-border)] bg-[var(--mm-surface)] px-3 py-2 text-sm"
+            />
+          </label>
+        </Card>
+        <Card>
           <h3 className="font-semibold">Notifications</h3>
           <p className="mt-1 text-sm text-[var(--mm-muted)]">This MVP surfaces approvals in-app. Email or push notifications are not implemented.</p>
+        </Card>
+        <Card className="lg:col-span-2">
+          <h3 className="font-semibold">Roadmap — not part of the demo</h3>
+          <p className="mt-1 text-sm text-[var(--mm-muted)]">
+            These ideas appeared in a visual study. They have no backend here and are listed only so they are not mistaken for live features.
+          </p>
+          <ul className="mt-3 grid gap-2 text-sm text-[var(--mm-muted)] sm:grid-cols-2">
+            <li>Built-in VPN</li>
+            <li>Passkey Vault</li>
+            <li>Breach Alerts</li>
+            <li>Family Vault</li>
+            <li>Receipt Scanner</li>
+            <li>Budget Napping</li>
+            <li>Tracker Blocking</li>
+            <li>Sync E2EE</li>
+          </ul>
         </Card>
       </div>
     </div>

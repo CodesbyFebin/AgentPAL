@@ -1,6 +1,7 @@
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
 import { formatINR, roundMoney } from "./money";
+import { spaceForSeedTxn } from "./spaces";
 import type { LedgerTxn, Payment, StoreData } from "./types";
 
 /** Apply a captured INR purchase to seeded demo finances. Idempotent per payment_id. USD demo purchases are left off the INR ledger. */
@@ -38,6 +39,7 @@ export function applyCapturedPurchase(store: StoreData, payment: Payment): void 
     demo: false,
     source: "paypal_purchase",
     payment_id: payment.payment_id,
+    space: spaceForSeedTxn({ category: "Electronics", merchant: payment.merchant_name }),
   };
   store.finance.transactions.push(txn);
 

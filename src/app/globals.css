@@ -54,11 +54,31 @@ body::before {
   content: "";
   pointer-events: none;
   position: fixed;
+  width: min(620px, 90vw);
+  height: min(620px, 90vw);
+  left: 12%;
+  top: -80px;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--mm-glow) 0%, transparent 62%);
+  filter: blur(40px);
+  animation: mm-breathe 7s ease-in-out infinite;
+}
+
+body::after {
+  content: "";
+  pointer-events: none;
+  position: fixed;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(circle at 12% -10%, var(--mm-glow), transparent 42%),
-    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--mm-accent-2) 22%, transparent), transparent 36%);
+  opacity: 0.16;
+  background-image: radial-gradient(rgba(15, 23, 42, 0.16) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+html[data-appearance="dark"] body::after {
+  opacity: 0.22;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.16) 1px, transparent 1px);
 }
 
 #__next,
@@ -91,6 +111,7 @@ body > * {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+  font-family: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .mm-focus:focus-visible {
@@ -101,7 +122,7 @@ body > * {
 @keyframes mm-slide-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
@@ -109,12 +130,44 @@ body > * {
   }
 }
 
+@keyframes mm-breathe {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.14) rotate(8deg);
+  }
+}
+
+@keyframes mm-zen-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+}
+
 .mm-slide-up {
-  animation: mm-slide-up 0.22s ease both;
+  animation: mm-slide-up 0.45s ease both;
+}
+
+.mm-zen-breathe {
+  animation: mm-zen-breathe 2s ease-in-out infinite;
+}
+
+.font-mono {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .mm-slide-up,
+  .mm-zen-breathe,
+  body::before,
   * {
     animation: none !important;
     transition: none !important;

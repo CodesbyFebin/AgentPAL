@@ -1,4 +1,5 @@
 import { DEMO_FX } from "./money";
+import { spaceForSeedTxn } from "./spaces";
 import type {
   BankAccount,
   FinanceState,
@@ -194,13 +195,14 @@ export function seedTransactions(asOf = new Date(DEMO_AS_OF)): LedgerTxn[] {
   const rand = mulberry32(20261110);
   const txs: LedgerTxn[] = [];
   let n = 0;
-  const add = (partial: Omit<LedgerTxn, "txn_id" | "currency" | "demo" | "source">) => {
+  const add = (partial: Omit<LedgerTxn, "txn_id" | "currency" | "demo" | "source" | "space">) => {
     n += 1;
     txs.push({
       txn_id: `txn_seed_${String(n).padStart(3, "0")}`,
       currency: "INR",
       demo: true,
       source: "seed",
+      space: spaceForSeedTxn({ category: partial.category, merchant: partial.merchant }),
       ...partial,
     });
   };
