@@ -5,6 +5,8 @@ import { explainAffordability, offlineCoachExplanation, parsePurchaseIntent } fr
 import { MONEYMATE_DEMO_PROMPT } from "./catalog";
 import { LAPTOP_INR } from "./finance-constants";
 import { assessFromFinance } from "./finance-engine";
+import { ALLOWED_PAYPAL_TOOLS, describeToolCall, planPayPalToolFromMessage, runGuardedPayPalTool } from "./paypal-agent-tools";
+import type { PayPalToolCall } from "./types";
 import type { AffordabilityResult, StoreData } from "./types";
 
 export async function coachTurn(store: StoreData, message: string): Promise<{
@@ -14,8 +16,25 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
   model?: string;
   injection: boolean;
   tools_used: string[];
+  paypal_tool_call?: PayPalToolCall;
 }> {
   const toolsUsed: string[] = [];
+
+  // Deterministic planner for PayPal agent-toolkit actions. Works with or without an AI key and
+  // always goes through AgentPaL Guard (runGuardedPayPalTool).
+  const toolPlan = planPayPalToolFromMessage(store, message);
+  if (toolPlan) {
+    const call = await runGuardedPayPalTool(store, toolPlan);
+    return {
+      reply: describeToolCall(call),
+      analysis: null,
+      planner: "offline",
+      model: "deterministic PayPal tool planner",
+      injection: false,
+      tools_used: [`paypal:${call.tool}`],
+      paypal_tool_call: call,
+    };
+  }
   // Always run the engine locally when we can parse an amount, so the UI has a structured card
   // even if the model is used only for prose.
   const intent = parsePurchaseIntent(message) || (/laptop/i.test(message) ? { amount: LAPTOP_INR, label: "laptop" } : null);
@@ -50,7 +69,7 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
   try {
     for (let hop = 0; hop < 4; hop++) {
       const started = Date.now();
-      const result = await chatWithTools(messages as never, COACH_TOOLS);
+      const result = await chatWithTools(messages as never, [...COACH_TOOLS, PAYPAL_TOOLKIT_AI_TOOL] as typeof COACH_TOOLS);
       model = result.model;
       logAiCall(store, {
         kind: "llm",
@@ -80,7 +99,17 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
         } catch {
           args = {};
         }
-        const out = await Promise.resolve(runCoachTool(store, call.name, args));
+        const out =
+          call.name === "paypal_toolkit"
+            ? describeToolCall(
+                await runGuardedPayPalTool(store, {
+                  tool: String(args.tool || ""),
+                  merchant_id: typeof args.merchant_id === "string" ? args.merchant_id : undefined,
+                  args: (args.args as Record<string, unknown>) || {},
+                  source: "coach-ai",
+                }),
+              )
+            : await Promise.resolve(runCoachTool(store, call.name, args));
         messages.push({
           role: "tool",
           tool_call_id: call.id,
@@ -113,3 +142,22 @@ export async function coachTurn(store: StoreData, message: string): Promise<{
     tools_used: toolsUsed,
   };
 }
+
+/** One AI-facing function that proxies to the Guard-wrapped toolkit allowlist. */
+const PAYPAL_TOOLKIT_AI_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "paypal_toolkit",
+    description:
+      "Propose a PayPal action through the official PayPal agent toolkit. Every call is checked by AgentPaL Guard (allowlist, kill switch, mandate cap, reservation) and audited. It can never capture money.",
+    parameters: {
+      type: "object",
+      properties: {
+        tool: { type: "string", enum: Object.keys(ALLOWED_PAYPAL_TOOLS) },
+        merchant_id: { type: "string" },
+        args: { type: "object" },
+      },
+      required: ["tool", "args"],
+    },
+  },
+};

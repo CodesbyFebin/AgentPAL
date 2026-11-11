@@ -10,6 +10,7 @@ import type {
   Receipt,
   RenewalReview,
   AiCallLog,
+  PayPalToolCall,
 } from "@/lib/types";
 import type { SettlementStep } from "@/lib/settlement";
 import type { PaymentMode } from "@/lib/payment-mode";
@@ -60,7 +61,8 @@ export type Snapshot = {
   ai_calls: AiCallLog[];
   webhook_receipts: unknown[];
   settings: { kill_switch: boolean; kill_switch_at?: string; public_key: string };
-  modes: { planner: { planner: "offline" | "ai"; model?: string }; payment?: PaymentMode; paypal: "sandbox" | "mock"; webhook?: string };
+  modes: { planner: { planner: "offline" | "ai"; model?: string }; payment?: PaymentMode; paypal: "sandbox" | "mock"; webhook?: string; agentToolkit?: "live" | "mock" };
+  paypal_tool_calls?: PayPalToolCall[];
 };
 
 export type RunFn = (label: string, fn: () => Promise<void>, next?: PageId) => Promise<void>;

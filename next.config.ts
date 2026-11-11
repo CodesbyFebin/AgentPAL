@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
-  serverExternalPackages: [],
+  serverExternalPackages: ["@paypal/agent-toolkit", "@paypal/paypal-server-sdk", "braintree"],
 };
 
 export default nextConfig;

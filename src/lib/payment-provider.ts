@@ -28,6 +28,10 @@ export interface AuthorizationResult {
   amount: number;
   currency: string;
   status: string;
+  /** PayPal only: custom_id echoed back on the authorization (must equal our payment id). */
+  custom_id?: string;
+  payee_merchant_id?: string;
+  payee_email?: string;
 }
 
 export interface CaptureResult {
@@ -105,30 +109,48 @@ export async function authorizeReservedPayment(opts: {
   }
   const oid = opts.orderId || opts.payment.paypal?.order_id;
   if (!oid) throw new Error("Missing PayPal order id");
-  const auth = await authorizeOrder(oid);
+  const auth = await authorizeOrder(oid, `auth-${opts.payment.payment_id}`);
+  if (auth.mode === "mock") {
+    // Mock mode has no processor; echo the reservation so the flow can be demonstrated (labelled mock).
+    return {
+      provider: "mock",
+      mode: "mock",
+      authorization_id: auth.authorization_id,
+      amount: opts.expectedAmount,
+      currency: opts.expectedCurrency,
+      status: "authorized (mock)",
+      custom_id: opts.payment.payment_id,
+    };
+  }
+  // Sandbox: report what PayPal actually authorized so AgentPaL Guard compares real values.
   return {
-    provider: auth.mode === "mock" ? "mock" : "paypal",
-    mode: auth.mode,
+    provider: "paypal",
+    mode: "sandbox",
     authorization_id: auth.authorization_id,
-    amount: opts.expectedAmount,
-    currency: opts.expectedCurrency,
-    status: "authorized",
+    amount: auth.amount ?? NaN,
+    currency: auth.currency ?? "",
+    status: auth.status || "CREATED",
+    custom_id: auth.custom_id,
+    payee_merchant_id: auth.payee_merchant_id,
+    payee_email: auth.payee_email,
   };
 }
 
 export async function captureReservedPayment(
   authorizationId: string,
   rail: Payment["rail"],
+  expected?: { amount: number; currency: string; requestId?: string },
 ): Promise<CaptureResult> {
   if (rail === "braintree_sandbox") {
     const tx = await submitForSettlement(authorizationId);
     return { provider: "braintree", mode: "sandbox", capture_id: tx.id, status: tx.status };
   }
-  const cap = await captureAuthorization(authorizationId);
+  const cap = await captureAuthorization(authorizationId, expected || {});
   return {
     provider: cap.mode === "mock" ? "mock" : "paypal",
     mode: cap.mode,
     capture_id: cap.capture_id,
+    status: cap.status,
   };
 }
 
@@ -167,4 +189,24 @@ export function amountsMatch(actual: number, expected: number, actualCurrency: s
     actualCurrency.toUpperCase() === expectedCurrency.toUpperCase() &&
     Number(actual).toFixed(2) === Number(expected).toFixed(2)
   );
+}
+
+/**
+ * AgentPaL Guard post-authorization check for the PayPal rail: the authorization must be bound
+ * to our reserved payment (custom_id) and, when PAYPAL_EXPECTED_PAYEE_MERCHANT_ID is set, paid to
+ * that payee. Returns a reason string on mismatch, or null when everything lines up.
+ */
+export function bindingMismatch(
+  auth: Pick<AuthorizationResult, "provider" | "custom_id" | "payee_merchant_id">,
+  paymentId: string,
+): string | null {
+  if (auth.provider !== "paypal") return null;
+  if (auth.custom_id !== paymentId) {
+    return `custom_id ${auth.custom_id || "(missing)"} is not the reserved payment ${paymentId}`;
+  }
+  const expectedPayee = process.env.PAYPAL_EXPECTED_PAYEE_MERCHANT_ID;
+  if (expectedPayee && auth.payee_merchant_id && auth.payee_merchant_id !== expectedPayee) {
+    return `payee ${auth.payee_merchant_id} is not the expected payee`;
+  }
+  return null;
 }

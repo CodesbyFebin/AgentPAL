@@ -642,5 +642,44 @@ export interface StoreData {
   categories: CategoryRecord[];
   ai_tool_logs: AiCallLog[];
   financial_snapshots: FinancialSnapshot[];
+  /** Guard-wrapped PayPal agent-toolkit calls proposed by AgentPaL Coach. */
+  paypal_tool_calls: PayPalToolCall[];
   settings: Settings;
+}
+
+export type PayPalToolDecision = "EXECUTED" | "BLOCKED" | "NEEDS_APPROVAL" | "ERROR";
+
+export interface PayPalToolReceipt {
+  receipt_id: string;
+  call_id: string;
+  tool: string;
+  decision: PayPalToolDecision;
+  args_sha256: string;
+  result_ref?: string;
+  mode: "live" | "mock";
+  event_id: string;
+  event_hash: string;
+  created_at: string;
+  public_key: string;
+  signature: string;
+}
+
+export interface PayPalToolCall {
+  call_id: string;
+  tool: string;
+  source: "coach-offline" | "coach-ai" | "api";
+  merchant_id?: string;
+  merchant_name?: string;
+  amount?: number;
+  currency?: "USD";
+  decision: PayPalToolDecision;
+  reason: string;
+  checks: PolicyCheck[];
+  /** True only when the underlying @paypal/agent-toolkit tool (or its labelled mock) ran. */
+  invoked: boolean;
+  mode: "live" | "mock";
+  result?: unknown;
+  reservation_id?: string;
+  receipt: PayPalToolReceipt;
+  created_at: string;
 }

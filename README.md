@@ -83,12 +83,24 @@ Precedence: **Braintree sandbox** (when `BRAINTREE_MERCHANT_ID`, `BRAINTREE_PUBL
 
 Braintree uses the official Node SDK: a client token for Drop-in UI, `transaction.sale` with `submitForSettlement: false` (authorize), amount/currency checked against the reserved mandate, then `submitForSettlement` (capture). On any failure the authorization is voided. The private key is server-only and must never be placed in `NEXT_PUBLIC_*` variables, logs, or API responses.
 
-## PayPal APIs used
+## Built with PayPal open source
 
-- Orders v2 — create (`intent=AUTHORIZE`), authorize, capture, void, refund
-- `PayPal-Request-Id` for idempotent order creation
-- Webhooks — `POST /api/v1/webhooks/paypal` verifies with `/v1/notifications/verify-webhook-signature` when `PAYPAL_WEBHOOK_ID` is set
-- Subscriptions — `POST /v1/billing/subscriptions/{id}/cancel`
+| Library | Version | License | How AgentPaL uses it |
+|---|---|---|---|
+| [`@paypal/paypal-server-sdk`](https://github.com/paypal/PayPal-TypeScript-Server-SDK) | 2.5.0 | MIT (npm) | `OrdersController.createOrder` (intent `AUTHORIZE`), `authorizeOrder`, `getOrder`; `PaymentsController.captureAuthorizedPayment` (`finalCapture`), `voidPayment`, `refundCapturedPayment`; `SubscriptionsController.getSubscription` / `cancelSubscription`. Every mutating call sends a `paypalRequestId` for idempotent retries. Sandbox environment only. Replaces the old hand-written REST client (`src/lib/paypal.ts`). |
+| [`@paypal/agent-toolkit`](https://github.com/paypal/agent-toolkit) | 1.11.0 | ISC (npm) / Apache-2.0 (repo) | Vercel AI SDK integration (`@paypal/agent-toolkit/ai-sdk`). AgentPaL Coach can propose `create_order`, `get_order`, `create_invoice`, `list_invoices`, `show_subscription_details`. Each tool's `execute` is wrapped by AgentPaL Guard (`src/lib/paypal-agent-tools.ts`). |
+| [`@paypal/react-paypal-js`](https://github.com/paypal/paypal-js) | 10.6.1 | Apache-2.0 | Official `PayPalButtons` on **Payment Methods** next to the Braintree Drop-in. `createOrder` and `onApprove` call AgentPaL routes. The client ID comes from `/api/paypal/config`. The secret never reaches the browser. |
+
+### Guard-wrapped agent toolkit
+
+Every toolkit call goes through these steps: **tool allowlist → kill switch → mandate policy (merchant allowlist, category, per-transaction limit, total cap) → atomic reservation → toolkit tool → hash-chained audit event → Ed25519-signed tool receipt**. A blocked call never invokes the underlying toolkit tool, so nothing reaches PayPal. `pay_order`, refunds and payouts are deliberately left out of the allowlist and are not enabled in the toolkit configuration, so Coach can never capture money. Money still moves only through the existing approval and checkout path. Without an AI key, a deterministic offline planner maps Coach messages such as “Create a PayPal order for $12 at Nameforge Domains” to the same wrapped tools. **Run Guard demo** on the Coach screen runs one allowed call and two blocked calls (a malicious merchant and a capture attempt). Without PayPal credentials, allowed calls return results stamped `mock: true` with a MOCK notice.
+
+### PayPal APIs used
+
+- Orders v2: create (`intent=AUTHORIZE`), authorize, get. Payments v2: capture an authorization, void, refund. All go through the server SDK.
+- After authorization, AgentPaL Guard checks the **amount and currency actually authorized**, `custom_id` (it must equal the reserved payment id) and, optionally, the payee (`PAYPAL_EXPECTED_PAYEE_MERCHANT_ID`). Any mismatch voids the authorization.
+- Webhooks: `POST /api/v1/webhooks/paypal` verifies signatures with `/v1/notifications/verify-webhook-signature` when `PAYPAL_WEBHOOK_ID` is set. This is the one **narrow direct-fetch fallback**, because the server SDK 2.x has no Notifications API.
+- Subscriptions: get and cancel through the server SDK.
 
 **INR:** sandbox checkout is submitted in USD at a **labelled fixed demo rate of ₹83.00 = US$1.00**. That rate is not a live FX quote. The UI always shows both amounts.
 
@@ -99,7 +111,8 @@ Braintree uses the official Node SDK: a client token for Drop-in UI, `transactio
 | Braintree authorize / capture / void / refund | **Real implementation** when all three Braintree keys are set (preferred). `transaction.sale` authorizes; `submitForSettlement` captures after verification. |
 | Braintree buyer approval | Drop-in UI (sandbox card `4111 1111 1111 1111` or the PayPal sandbox button if enabled on the merchant). Scripted tests may post the `fake-valid-nonce`. |
 | PayPal Orders v2 authorize / capture / void / refund | **Real implementation** when Braintree is unset and `PAYPAL_CLIENT_ID` plus `PAYPAL_CLIENT_SECRET` are set; otherwise a labelled **mock** with the same states. |
-| PayPal buyer approval | Approve link (and return URL) in PayPal REST sandbox; **Simulate sandbox approval** in mock mode. |
+| PayPal buyer approval | Official PayPal JS button (popup) or the approve link in sandbox. **Simulate sandbox approval** in mock mode. Without a client ID, the button area shows a disabled “PayPal sandbox not configured — mock mode” placeholder. |
+| PayPal agent toolkit (Coach) | Real toolkit calls (sandbox) when PayPal credentials are set. Otherwise results are labelled **MOCK**. Guard checks, audit events and signed receipts are real in both modes. |
 | Subscription cancel | Real PayPal Subscriptions API when PayPal REST credentials are set; **labelled simulated cancel** otherwise (including when only Braintree is configured — subscription plans are not set up). |
 | Webhook signature verification | Real when `PAYPAL_WEBHOOK_ID` is set. Demo replay is labelled because sandbox billing does not fire on cue. |
 | Finance accounts, transactions, budgets, bills, catalog, demo subscriptions | **Seeded demo data**, clearly labelled. Not a bank connection. Not a user's personal PayPal history. |
@@ -180,10 +193,19 @@ npm run build
 npm start
 ```
 
+## Limits and what this does not prove
+
+- **Sandbox only.** The server SDK client is hard-wired to `Environment.Sandbox`. No live money moves.
+- PayPal button, server SDK and toolkit paths stay **mock** until `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are set in Render. The Braintree path needs `BRAINTREE_PRIVATE_KEY`.
+- In sandbox mode the agent toolkit creates orders with its own default intent (`CAPTURE`). Coach cannot capture them, because `pay_order` is blocked. Payments that actually move money use AgentPaL's own AUTHORIZE → verify → capture path.
+- Merchant prompt-injection screening is a simple regex screen and is best-effort. The guarantee comes from **deterministic policy enforcement**: allowlist, category, caps, kill switch and reservations. Treat any text from a model or a merchant as untrusted.
+- Seeded INR finance data is demo data, not a bank connection. The ₹83 = $1 rate is a fixed demo rate.
+- The store is a JSON file on Render's free plan, which resets when the service restarts. It is not a production datastore.
+
 ## Tests
 
 ```bash
-npm test        # policy engine, finance engine, receipts (vitest)
+npm test        # policy, finance, receipts, PayPal SDK authorize→verify→capture/void, Guard-wrapped toolkit (vitest)
 npm run build   # production Next.js build
 ```
 

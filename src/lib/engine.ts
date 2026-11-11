@@ -13,6 +13,7 @@ import { settlementTimelinesFor } from "./settlement";
 import {
   amountsMatch,
   authorizeReservedPayment,
+  bindingMismatch,
   captureReservedPayment,
   refundReservedPayment,
   startPaymentCheckout,
@@ -413,6 +414,13 @@ export async function completePaymentAfterBuyer(
   const step = plan?.steps.find((s) => s.step_id === payment.step_id);
   if (!plan || !step) throw new Error("Plan step not found");
 
+  if (store.settings.kill_switch) {
+    throw new Error("Kill switch is on. AgentPaL Guard refuses to authorize any payment until a human turns it off.");
+  }
+  if (payment.status !== "awaiting_buyer") {
+    throw new Error(`Payment is ${payment.status}, not awaiting buyer approval`);
+  }
+
   const expectedAmount =
     payment.braintree?.settlement_amount ??
     payment.paypal?.settlement_amount ??
@@ -427,7 +435,8 @@ export async function completePaymentAfterBuyer(
     expectedCurrency,
   });
 
-  if (!amountsMatch(auth.amount, expectedAmount, auth.currency, expectedCurrency)) {
+  const binding = bindingMismatch(auth, payment.payment_id);
+  if (binding || !amountsMatch(auth.amount, expectedAmount, auth.currency, expectedCurrency)) {
     try {
       await voidReservedPayment(auth.authorization_id, payment.rail);
     } catch {
@@ -446,17 +455,22 @@ export async function completePaymentAfterBuyer(
     appendEvent(
       store,
       "payment.authorization.mismatch",
-      `Authorization ${auth.authorization_id} voided because ${auth.currency} ${auth.amount} did not match the reserved ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
+      binding
+        ? `Authorization ${auth.authorization_id} voided by AgentPaL Guard: ${binding}`
+        : `Authorization ${auth.authorization_id} voided because ${auth.currency} ${auth.amount} did not match the reserved ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
       {
         goal_id: payment.goal_id,
         payment_id: payment.payment_id,
         authorization_id: auth.authorization_id,
         expected_amount: expectedAmount,
         actual_amount: auth.amount,
+        binding_mismatch: binding || undefined,
       },
     );
     throw new Error(
-      `Authorized amount ${auth.currency} ${auth.amount} does not match the reserved mandate amount ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
+      binding
+        ? `Authorization does not match the reserved payment: ${binding}`
+        : `Authorized amount ${auth.currency} ${auth.amount} does not match the reserved mandate amount ${expectedCurrency} ${expectedAmount.toFixed(2)}`,
     );
   }
 
@@ -496,7 +510,11 @@ export async function completePaymentAfterBuyer(
 
   const verification = fulfillAndMaybeSettle(store, payment, step);
   if (verification.status === "passed") {
-    const cap = await captureReservedPayment(auth.authorization_id, payment.rail);
+    const cap = await captureReservedPayment(auth.authorization_id, payment.rail, {
+      amount: expectedAmount,
+      currency: expectedCurrency,
+      requestId: `cap-${payment.payment_id}`,
+    });
     if (payment.rail === "braintree_sandbox" && payment.braintree) {
       payment.braintree.capture_id = cap.capture_id;
       payment.braintree.status = cap.status || "submitted_for_settlement";
@@ -726,7 +744,9 @@ export function snapshot() {
         payment: paymentMode(),
         paypal: paypalMode(),
         webhook: process.env.PAYPAL_WEBHOOK_ID ? "configured" : "unset",
+        agentToolkit: paypalMode() === "sandbox" ? "live" : "mock",
       },
+      paypal_tool_calls: (store.paypal_tool_calls ?? []).slice(-20),
     };
   });
 }

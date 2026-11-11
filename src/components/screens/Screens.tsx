@@ -19,6 +19,8 @@ import { formatINR, formatMoney, DEMO_FX } from "@/lib/money";
 import { annualizedDelta, lifecycleOf, raisedThisYear } from "@/lib/subscription-metrics";
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
 import { BraintreeCheckout } from "@/components/BraintreeCheckout";
+import { PayPalButtonsCheckout } from "@/components/PayPalButtonsCheckout";
+import { PayPalToolkitCard } from "@/components/PayPalToolkitCard";
 import { ACCENT_THEMES, type AccentThemeId, type Appearance } from "@/lib/ui-themes";
 import { matchesSpace, SPACE_META, type MoneySpace } from "@/lib/spaces";
 import type { ZenPrefs } from "@/lib/zen";
@@ -664,6 +666,7 @@ export function CoachScreen({ state, chat, setChat, messages, analysis, askCoach
             )}
           </Card>
         )}
+        <PayPalToolkitCard state={state} run={run} />
         <LaptopScanToPayCard state={state} run={run} />
         <AiCallsPanel calls={state.ai_calls || []} />
       </div>
@@ -733,6 +736,28 @@ export function VaultScreen({ state, run, requestZenPause }: ScreenProps) {
           </ul>
         </Card>
       </div>
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">Checkout rails</h3>
+          <span className="text-[11px] text-[var(--mm-muted)]">Built with PayPal APIs · every rail goes through AgentPaL Guard</span>
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-[var(--mm-border)] p-3 text-sm">
+            <div className="flex items-center justify-between"><span className="font-medium">Braintree Drop-in (sandbox)</span><Badge tone={(state.modes.payment || "").startsWith("braintree") ? "success" : "warning"}>{(state.modes.payment || "").startsWith("braintree") ? "configured" : "mock"}</Badge></div>
+            <p className="mt-1 text-xs text-[var(--mm-muted)]">Card or PayPal via Braintree. Authorize → Guard verifies amount → submit for settlement, or void.</p>
+          </div>
+          <div className="rounded-xl border border-[var(--mm-border)] p-3 text-sm">
+            <div className="flex items-center justify-between"><span className="font-medium">PayPal JS Buttons (Orders v2, server SDK)</span><Badge tone={state.modes.paypal === "sandbox" ? "success" : "warning"}>{state.modes.paypal === "sandbox" ? "sandbox" : "mock"}</Badge></div>
+            <p className="mt-1 text-xs text-[var(--mm-muted)]">Order intent AUTHORIZE created server-side for the reserved amount, then authorize → verify amount and custom_id → capture, or void.</p>
+          </div>
+        </div>
+        {!state.payments.some((p) => p.status === "awaiting_buyer") && (
+          <div className="mt-2 md:max-w-sm">
+            {state.modes.paypal !== "sandbox" && <PayPalButtonsCheckout paymentId="preview" amountUsd={0} onComplete={() => undefined} />}
+            <p className="mt-1 text-[11px] text-[var(--mm-muted)]">Run scenario A or propose the laptop to get a Guard-approved payment to pay here.</p>
+          </div>
+        )}
+      </Card>
       {state.payments.length === 0 && <EmptyState title="No payments yet" body="Run scenario A or propose a laptop from the coach." />}
       <ul className="space-y-3">
         {state.payments.map((p) => (
@@ -754,6 +779,17 @@ export function VaultScreen({ state, run, requestZenPause }: ScreenProps) {
                   onBeforePay={() => requestZenPause(p.amount, p.currency, p.merchant_name)}
                   onComplete={() => run("Refreshing after sandbox payment…", async () => undefined)}
                 />
+              )}
+              {p.status === "awaiting_buyer" && p.rail !== "x402_usdc" && (
+                <div className="w-full md:max-w-sm">
+                  <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-[var(--mm-muted)]">Or pay with PayPal (sandbox)</p>
+                  <PayPalButtonsCheckout
+                    paymentId={p.payment_id}
+                    amountUsd={p.braintree?.settlement_amount ?? p.paypal?.settlement_amount ?? (p.currency === "INR" ? p.amount / 83 : p.amount)}
+                    onBeforePay={() => requestZenPause(p.amount, p.currency, p.merchant_name)}
+                    onComplete={() => run("Refreshing after PayPal sandbox payment…", async () => undefined)}
+                  />
+                </div>
               )}
               {p.status === "awaiting_buyer" && p.paypal?.approve_url && p.paypal.mode !== "mock" && p.rail !== "braintree_sandbox" && (
                 <Button variant="secondary" href={p.paypal.approve_url}>Open PayPal approval</Button>

@@ -38,6 +38,7 @@ function emptyStore(): StoreData {
     categories: [],
     ai_tool_logs: [],
     financial_snapshots: [],
+    paypal_tool_calls: [],
     settings: {
       kill_switch: false,
       signing: generateEd25519Pem(),
@@ -69,6 +70,7 @@ function hydrateStore(store: StoreData) {
   store.categories ??= [];
   store.ai_tool_logs ??= store.ai_calls;
   store.financial_snapshots ??= [];
+  store.paypal_tool_calls ??= [];
   for (const m of store.mandates) {
     m.per_tx_limit ??= m.auto_approve_limit;
     m.approval_threshold ??= m.per_tx_limit;
@@ -140,7 +142,7 @@ export async function updateStore<T>(mutator: (store: StoreData) => T | Promise<
     const store = readStore();
     const result = await mutator(store);
     ensureDir();
-    const tmp = `${DATA_FILE}.tmp`;
+    const tmp = `${DATA_FILE}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
     fs.renameSync(tmp, DATA_FILE);
     memory = store;
