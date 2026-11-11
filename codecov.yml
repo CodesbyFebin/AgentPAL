@@ -1,0 +1,13 @@
+# Codecov — coverage thresholds and ignore rules.
+# Runs automatically once the token is configured (free for public repos).
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+    patch:
+      default:
+        target: 80% # new code should start well covered
+comment:
+  layout: "reach, diff, flags, files"
