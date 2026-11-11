@@ -29,10 +29,18 @@ export type PageId =
   | "invoices"
   | "security"
   | "developer"
-  | "settings";
+  | "settings"
+  | "command-center"
+  | "money-os"
+  | "agent-mesh"
+  | "hardening"
+  | "analytics";
 
 export const PAGES: { id: PageId; label: string; group?: string }[] = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "command-center", label: "Command Center" },
+  { id: "money-os", label: "Money OS" },
+  { id: "agent-mesh", label: "AI Agent Mesh" },
   { id: "transactions", label: "Transactions" },
   { id: "subscriptions", label: "Subscriptions" },
   { id: "budgets", label: "Budgets" },
@@ -41,10 +49,12 @@ export const PAGES: { id: PageId; label: string; group?: string }[] = [
   { id: "links", label: "Payment Links" },
   { id: "agents", label: "Agents" },
   { id: "insights", label: "Insights" },
+  { id: "analytics", label: "Analytics" },
   { id: "reports", label: "Reports" },
   { id: "refunds", label: "Refunds & Disputes" },
   { id: "invoices", label: "Invoices & Plans" },
   { id: "security", label: "Security Center" },
+  { id: "hardening", label: "Hardening" },
   { id: "developer", label: "Developer" },
   { id: "settings", label: "Settings" },
 ];

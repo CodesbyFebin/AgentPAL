@@ -13,8 +13,9 @@ export function isMutatingMethod(method: string): boolean {
 }
 
 /** Paths a viewer may still POST to: the kill switch (the route lets viewers only ENGAGE it), the role
- * endpoint (owner requires the server-side PIN), and PayPal webhooks (signature-verified). */
-const RBAC_EXEMPT = [/^\/api\/kill-switch$/, /^\/api\/security\/role$/, /^\/api\/webhooks\//, /^\/api\/v1\/webhooks\//, /^\/api\/paypal\/webhook$/];
+ * endpoint (owner requires the server-side PIN), the local webhook simulator (scratch store only), and
+ * PayPal webhooks (signature-verified). */
+const RBAC_EXEMPT = [/^\/api\/kill-switch$/, /^\/api\/security\/role$/, /^\/api\/hardening\/webhook-sim$/, /^\/api\/webhooks\//, /^\/api\/v1\/webhooks\//, /^\/api\/paypal\/webhook$/];
 
 export function rbacDecision(method: string, pathname: string, role: Role): { allowed: boolean; reason?: string } {
   if (!pathname.startsWith("/api/")) return { allowed: true };
@@ -29,6 +30,7 @@ export function rbacDecision(method: string, pathname: string, role: Role): { al
 /** Route groups that move or could move money get a tighter limit. */
 export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; windowMs: number }> = [
   { group: "payments", match: /^\/api\/(payments|paypal\/orders|refunds|purchases|pay-links\/[^/]+\/pay|steps\/[^/]+\/execute)/, limit: 20, windowMs: 60_000 },
+  { group: "hardening-sim", match: /^\/api\/hardening\/webhook-sim$/, limit: 30, windowMs: 60_000 },
   { group: "role", match: /^\/api\/security\/role$/, limit: 10, windowMs: 60_000 },
   { group: "paypal-tools", match: /^\/api\/(coach\/paypal-tools|invoices|paypal-plans|paypal-subscriptions)/, limit: 30, windowMs: 60_000 },
 ];

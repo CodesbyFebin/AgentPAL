@@ -24,6 +24,11 @@ import {
   Command,
   Menu,
   X,
+  Gauge,
+  Landmark,
+  Network,
+  Lock,
+  PieChart,
 } from "lucide-react";
 import { DEMO_USER_NAME } from "@/lib/finance-seed";
 import type { PageId, Snapshot } from "@/components/app-types";
@@ -49,6 +54,11 @@ const ICONS: Record<PageId, typeof LayoutDashboard> = {
   security: ShieldCheck,
   developer: Code2,
   settings: Settings,
+  "command-center": Gauge,
+  "money-os": Landmark,
+  "agent-mesh": Network,
+  hardening: Lock,
+  analytics: PieChart,
 };
 
 const MOBILE_PRIMARY: PageId[] = ["dashboard", "coach", "agents", "vault"];

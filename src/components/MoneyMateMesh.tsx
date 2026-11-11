@@ -1,6 +1,7 @@
 "use client";
 
 import { DeveloperScreen, InvoicesScreen, RefundsScreen, SecurityScreen } from "@/components/screens/Phase2Screens";
+import { AgentMeshScreen, AnalyticsScreen, CommandCenterScreen, HardeningScreen, MoneyOsScreen } from "@/components/screens/Phase3Screens";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { MONEYMATE_DEMO_PROMPT } from "@/lib/catalog";
 import { budgetProgress } from "@/lib/finance-engine";
@@ -541,6 +542,16 @@ export function MoneyMateMesh() {
         return <SecurityScreen {...screenProps} />;
       case "developer":
         return <DeveloperScreen {...screenProps} />;
+      case "command-center":
+        return <CommandCenterScreen {...screenProps} />;
+      case "money-os":
+        return <MoneyOsScreen {...screenProps} />;
+      case "agent-mesh":
+        return <AgentMeshScreen {...screenProps} />;
+      case "hardening":
+        return <HardeningScreen {...screenProps} />;
+      case "analytics":
+        return <AnalyticsScreen {...screenProps} />;
       default:
         return <DashboardScreen {...screenProps} />;
     }

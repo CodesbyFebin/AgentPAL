@@ -356,14 +356,14 @@ export function SecurityScreen({ run }: ScreenProps) {
 
 /* ------------------------------ Developer ------------------------------ */
 
-const REPOS = [
+export const REPOS = [
   { name: "paypal/PayPal-TypeScript-Server-SDK", pkg: "@paypal/paypal-server-sdk@2.5.0", license: "MIT (npm metadata)", url: "https://github.com/paypal/PayPal-TypeScript-Server-SDK", use: "Orders, Payments, Subscriptions controllers" },
   { name: "paypal/agent-toolkit", pkg: "@paypal/agent-toolkit@1.11.0", license: "ISC (npm) / Apache-2.0 (repo)", url: "https://github.com/paypal/agent-toolkit", use: "AI SDK tools wrapped by AgentPaL Guard" },
   { name: "paypal/paypal-js", pkg: "@paypal/react-paypal-js@10.6.1", license: "Apache-2.0", url: "https://github.com/paypal/paypal-js", use: "Official PayPal Buttons on checkout" },
   { name: "braintree/braintree_node", pkg: "braintree@3.41.0", license: "MIT", url: "https://github.com/braintree/braintree_node", use: "Drop-in authorize → settle / void" },
 ];
 
-const SNIPPETS: Array<{ title: string; file: string; code: string }> = [
+export const SNIPPETS: Array<{ title: string; file: string; code: string }> = [
   {
     title: "Authorize-only order with the server SDK",
     file: "src/lib/paypal.ts",

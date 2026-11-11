@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const headers = webhookHeadersFrom(req);
   const event = await readJson<{ id?: string; event_type?: string; resource?: Record<string, unknown> }>(req);
-  const demoReplay = req.headers.get("x-moneymate-demo-replay") === "1";
+  const demoReplay = req.headers.get("x-agentpal-demo-replay") === "1";
 
   try {
     const result = await updateStore(async (store) => {
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         throw new Error("PayPal webhook signature verification failed");
       }
       if (!webhookIdSet && paypalMode() !== "mock" && !demoReplay) {
-        throw new Error("PAYPAL_WEBHOOK_ID is not set; refusing to process an unverified live/sandbox webhook (pass x-moneymate-demo-replay: 1 only for a labelled demo replay).");
+        throw new Error("PAYPAL_WEBHOOK_ID is not set; refusing to process an unverified live/sandbox webhook (pass x-agentpal-demo-replay: 1 only for a labelled demo replay).");
       }
 
       const method = webhookIdSet && verification.ok ? "paypal" : paypalMode() === "mock" ? "skipped_mock" : "skipped_no_webhook_id";

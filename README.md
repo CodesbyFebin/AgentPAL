@@ -2,7 +2,7 @@
 
 **Your AI. Your Money. Your Rules.**
 
-**Live demo:** https://moneymate-mesh-8kzx.onrender.com (Render free plan, sandbox/mock mode; the first request after idle can take ~50 s while the instance wakes)
+**Live demo:** https://moneymate-mesh-8kzx.onrender.com · **Repo:** https://github.com/CodesbyFebin/moneymate-mesh (the repo and Render service names are historical; the product is AgentPaL). Render free plan, sandbox/mock mode; the first request after idle can take ~50 s while the instance wakes.
 
 AgentPaL is one product with two jobs:
 
@@ -157,8 +157,8 @@ Signed receipts (and the payment cards) show a settlement timeline: **authorized
 Prerequisites: Node.js 20+ and npm.
 
 ```bash
-git clone <your-repo-url> moneymate-mesh
-cd moneymate-mesh
+git clone https://github.com/CodesbyFebin/moneymate-mesh.git agentpal
+cd agentpal
 cp .env.example .env.local
 npm install
 npm test

@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   return ok({
     ok: true,
-    service: "moneymate-mesh",
+    service: "agentpal",
     paymentMode: paymentMode(),
     paypalMode: paypalMode(),
     agentToolkit: agentToolkitMode(),
