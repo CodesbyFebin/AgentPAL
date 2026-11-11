@@ -33,7 +33,8 @@ export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; w
   { group: "paypal-tools", match: /^\/api\/(coach\/paypal-tools|invoices|paypal-plans|paypal-subscriptions)/, limit: 30, windowMs: 60_000 },
 ];
 
-const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+/** Canonical dotted-quad only: no leading zeros ("01.2.3.4" is rejected, so it can't mint a second bucket). */
+const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
 
 /** Expands an IPv6 address to 8 lowercase 4-digit hextets, or null if invalid. Handles "::" and IPv4 tails. */
 export function expandIpv6(input: string): string[] | null {
@@ -81,8 +82,11 @@ export type ClientIpSource = "cf-connecting-ip" | "true-client-ip" | "unknown";
 export function clientIdentity(headers: { get(name: string): string | null }): { key: string; source: ClientIpSource } {
   for (const [name, source] of [["cf-connecting-ip", "cf-connecting-ip"], ["true-client-ip", "true-client-ip"]] as const) {
     const raw = headers.get(name);
-    const bucket = raw ? ipBucket(raw) : null;
-    if (bucket) return { key: bucket, source };
+    if (raw === null) continue;
+    const bucket = ipBucket(raw);
+    // A present-but-malformed edge header goes to the shared bucket; it never falls through to a
+    // lower-priority header (which an attacker might control).
+    return bucket ? { key: bucket, source } : { key: "unknown", source: "unknown" };
   }
   return { key: "unknown", source: "unknown" };
 }

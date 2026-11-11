@@ -82,7 +82,10 @@ export function rbacHealthCheck(env: NodeJS.ProcessEnv = process.env): HealthChe
   };
 }
 
-export async function computeSecurityHealth(store: StoreData): Promise<{ score: number; grade: string; checks: HealthCheck[] }> {
+export async function computeSecurityHealth(
+  store: StoreData,
+  opts: { loadHeaderRules?: () => Promise<HeaderRules> } = {},
+): Promise<{ score: number; grade: string; checks: HealthCheck[] }> {
   const chain = verifyAuditChain(store.events);
   const secrets = envSecretValues();
   const publicEnv = Object.entries(process.env).filter(([k]) => k.startsWith("NEXT_PUBLIC_"));
@@ -139,7 +142,7 @@ export async function computeSecurityHealth(store: StoreData): Promise<{ score: 
       detail: store.settings.kill_switch ? "Kill switch is ON — all agent money movement is frozen." : "Kill switch is off and can be flipped from the header or the API.",
     },
   ];
-  const headers = await checkSecurityHeaders();
+  const headers = await checkSecurityHeaders(opts.loadHeaderRules);
   checks.push({
     id: "security_headers",
     label: "CSP + security headers registered (read from next.config.ts)",

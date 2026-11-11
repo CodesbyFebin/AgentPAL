@@ -164,7 +164,6 @@ describe("rate-limit client key and FX", () => {
   it("prefers CF-Connecting-IP over True-Client-IP", () => {
     expect(clientKey(h({ "cf-connecting-ip": "1.1.1.1", "true-client-ip": "2.2.2.2" }))).toBe("1.1.1.1");
     expect(clientKey(h({ "true-client-ip": "2.2.2.2" }))).toBe("2.2.2.2");
-    expect(clientKey(h({ "cf-connecting-ip": "not-an-ip", "true-client-ip": "2.2.2.2" }))).toBe("2.2.2.2");
   });
   it("rotating X-Forwarded-For never changes the bucket", () => {
     const keys = ["9.9.9.9", "8.8.8.8, 10.0.0.1", "7.7.7.7", "2001:db8::1"].map((xff) => clientKey(h({ "x-forwarded-for": xff, "true-client-ip": "2.2.2.2" })));
@@ -179,6 +178,17 @@ describe("rate-limit client key and FX", () => {
       middleware(new NextRequest("http://localhost/api/security/role", { method: "POST", headers: { "x-forwarded-for": `198.51.100.${i}` } })).status,
     );
     expect(codes[10]).toBe(429);
+  });
+  it("malformed CF-Connecting-IP goes to the shared bucket (no fall-through to True-Client-IP)", () => {
+    expect(clientKey(h({ "cf-connecting-ip": "not-an-ip", "true-client-ip": "2.2.2.2" }))).toBe("unknown");
+    expect(clientKey(h({ "cf-connecting-ip": "", "true-client-ip": "2.2.2.2" }))).toBe("unknown");
+    expect(clientKey(h({ "true-client-ip": "999.1.1.1" }))).toBe("unknown");
+  });
+  it("non-canonical IPv4 (leading zeros) is rejected, so it can't mint a second bucket", () => {
+    expect(clientKey(h({ "cf-connecting-ip": "1.2.3.4" }))).toBe("1.2.3.4");
+    expect(clientKey(h({ "cf-connecting-ip": "01.2.3.4" }))).toBe("unknown");
+    expect(clientKey(h({ "cf-connecting-ip": "1.02.3.004" }))).toBe("unknown");
+    expect(clientKey(h({ "cf-connecting-ip": "0.0.0.0" }))).toBe("0.0.0.0");
   });
   it("groups IPv6 by /64", () => {
     const a = clientKey(h({ "cf-connecting-ip": "2001:db8:abcd:12::1" }));
@@ -283,6 +293,22 @@ describe("security health score honesty", () => {
     const weak = SECURITY_HEADERS.map((x) => (x.key === "X-Frame-Options" ? { ...x, value: "SAMEORIGIN" } : x));
     expect((await checkSecurityHeaders(async () => [{ source: "/:path*", headers: weak }])).ok).toBe(false);
     expect((await checkSecurityHeaders(async () => [])).ok).toBe(false);
+  });
+  it("the header check feeds the score: removing a required header lowers it and fails security_headers", async () => {
+    const { SECURITY_HEADERS } = await import("@/lib/security");
+    const store = readStore();
+    const good = await computeSecurityHealth(store);
+    const bad = await computeSecurityHealth(store, {
+      loadHeaderRules: async () => [{ source: "/:path*", headers: SECURITY_HEADERS.filter((x) => x.key !== "X-Frame-Options") }],
+    });
+    const w = good.checks.find((c) => c.id === "security_headers")!;
+    expect(w.passed).toBe(true);
+    expect(bad.checks.find((c) => c.id === "security_headers")!.passed).toBe(false);
+    const total = good.checks.reduce((a, c) => a + c.weight, 0);
+    const pts = (h: typeof good) => h.checks.filter((c) => c.passed).reduce((a, c) => a + c.weight, 0);
+    expect(pts(good) - pts(bad)).toBe(w.weight);
+    expect(bad.score).toBe(Math.round((pts(bad) / total) * 100));
+    expect(bad.score).toBeLessThan(good.score);
   });
   it("demo-toggle mode: RBAC is a FAILED, weighted check and 100 is unreachable", async () => {
     const c = rbacHealthCheck();
