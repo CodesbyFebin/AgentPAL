@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJson } from "@/lib/http";
 import { clientKey, ROLE_COOKIE } from "@/lib/security";
-import { issueOwnerCookie, pinGuard, resolveRole, roleConfigNote, roleMode } from "@/lib/owner-session";
+import { globalPinBackoff, issueOwnerCookie, pinGuard, resolveRole, roleConfigNote, roleMode } from "@/lib/owner-session";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +34,14 @@ export async function POST(req: Request) {
         { status: 429, headers: { "Retry-After": String(Math.ceil(lock.retryAfterMs / 1000)) } },
       );
     }
+    // Global backoff only pauses NEW owner sign-ins; existing owner sessions keep working.
+    const global = globalPinBackoff.check();
+    if (global.locked) {
+      return NextResponse.json(
+        { error: "Owner sign-in is temporarily paused after repeated failed PINs. Existing owner sessions still work. Try again shortly.", mode },
+        { status: 429, headers: { "Retry-After": String(Math.ceil(global.retryAfterMs / 1000)) } },
+      );
+    }
   }
   const value = issueOwnerCookie(body.pin);
   if (!value) {
@@ -41,6 +49,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Owner sign-in is disabled: server session secret is not configured (fail closed).", role: "viewer", mode }, { status: 503 });
     }
     const f = pinGuard.fail(key);
+    globalPinBackoff.fail();
     return NextResponse.json(
       { error: f.locked ? "Too many failed owner PIN attempts. Locked out; try again later." : "Owner PIN required or incorrect. Role unchanged.", role: resolveRole(req.headers.get("cookie")).role, mode },
       { status: f.locked ? 429 : 403 },

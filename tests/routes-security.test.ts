@@ -36,7 +36,8 @@ const pinMode = () => {
 };
 let ipSeq = 0;
 const freshIp = () => `203.0.113.${++ipSeq}`;
-beforeEach(() => {
+beforeEach(async () => {
+  (await import("@/lib/owner-session")).globalPinBackoff.reset();
   resetStore();
   delete process.env.OWNER_PIN;
   delete process.env.OWNER_SESSION_SECRET;
@@ -261,5 +262,43 @@ describe("security health score honesty", () => {
     expect(rbacHealthCheck().passed).toBe(false);
     pinMode();
     expect(rbacHealthCheck().passed).toBe(true);
+  });
+});
+
+describe("global failed-PIN backoff", () => {
+  it("backoff grows 30s, 1m, 2m, 4m and caps at 5m", async () => {
+    const { GlobalPinBackoff } = await import("@/lib/owner-session");
+    const g = new GlobalPinBackoff(3);
+    let t = 1_000_000;
+    const locks: number[] = [];
+    for (let round = 0; round < 6; round++) {
+      let r = { locked: false, lockMs: 0 };
+      for (let i = 0; i < 3; i++) r = g.fail(t);
+      expect(r.locked).toBe(true);
+      locks.push(r.lockMs);
+      expect(g.check(t + r.lockMs - 1).locked).toBe(true);
+      expect(g.check(t + r.lockMs).locked).toBe(false);
+      t += r.lockMs + 1;
+    }
+    expect(locks).toEqual([30_000, 60_000, 120_000, 240_000, 300_000, 300_000]);
+  });
+  it("during a global lockout, new sign-ins get 429 but an existing owner cookie keeps working", async () => {
+    pinMode();
+    const { globalPinBackoff } = await import("@/lib/owner-session");
+    globalPinBackoff.reset();
+    const signIn = await rolePOST(json("/api/security/role", { role: "owner", pin: PIN }, { "true-client-ip": freshIp() }));
+    const owner = /agentpal_role=([^;]+)/.exec(signIn.headers.get("set-cookie") || "")![1];
+    // 10 failures spread across clients (stays under the per-IP lockout) trigger the global backoff.
+    for (let i = 0; i < 10; i++) {
+      await rolePOST(json("/api/security/role", { role: "owner", pin: "nope" }, { "true-client-ip": freshIp() }));
+    }
+    expect(globalPinBackoff.check().locked).toBe(true);
+    const blocked = await rolePOST(json("/api/security/role", { role: "owner", pin: PIN }, { "true-client-ip": freshIp() }));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get("retry-after"))).toBeLessThanOrEqual(30);
+    const mwReq = new NextRequest("http://localhost/api/refunds", { method: "POST", headers: { cookie: `agentpal_role=${owner}`, "true-client-ip": freshIp() } });
+    expect(middleware(mwReq).status).toBe(200);
+    expect(resolveRole(`agentpal_role=${owner}`).role).toBe("owner");
+    globalPinBackoff.reset();
   });
 });

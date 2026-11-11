@@ -141,3 +141,56 @@ export class PinAttemptGuard {
 }
 
 export const pinGuard = new PinAttemptGuard();
+
+/**
+ * Global (all clients) failed-PIN backoff, against distributed guessing. After `threshold` failures inside
+ * `windowMs`, NEW owner sign-ins are paused with exponential backoff: 30 s, 1 m, 2 m, 4 m, then capped at
+ * 5 m. It never invalidates existing owner sessions (resolveRole ignores it), so a demo can't be locked out
+ * of an already-signed-in owner session. State is in memory: restarting the service clears it (recovery).
+ */
+export class GlobalPinBackoff {
+  private failures = 0;
+  private windowStart = 0;
+  private lockouts = 0;
+  private lastLockAt = 0;
+  private lockedUntil = 0;
+  constructor(
+    readonly threshold = 10,
+    readonly windowMs = 15 * 60 * 1000,
+    readonly baseMs = 30_000,
+    readonly capMs = 5 * 60 * 1000,
+  ) {}
+  check(now = Date.now()): { locked: boolean; retryAfterMs: number } {
+    return this.lockedUntil > now ? { locked: true, retryAfterMs: this.lockedUntil - now } : { locked: false, retryAfterMs: 0 };
+  }
+  /** Backoff for the n-th consecutive lockout (1-based). */
+  backoffMs(n: number): number {
+    return Math.min(this.capMs, this.baseMs * 2 ** Math.max(0, n - 1));
+  }
+  fail(now = Date.now()): { locked: boolean; lockMs: number } {
+    if (now - this.windowStart > this.windowMs) {
+      this.failures = 0;
+      this.windowStart = now;
+    }
+    // Quiet for a full window since the last lockout: start the backoff ladder again.
+    if (this.lockouts && now - this.lastLockAt > this.windowMs + this.capMs) this.lockouts = 0;
+    this.failures += 1;
+    if (this.failures >= this.threshold) {
+      this.lockouts += 1;
+      const lockMs = this.backoffMs(this.lockouts);
+      this.lockedUntil = now + lockMs;
+      this.lastLockAt = now;
+      this.failures = 0;
+      this.windowStart = now;
+      return { locked: true, lockMs };
+    }
+    return { locked: false, lockMs: 0 };
+  }
+  reset() {
+    this.failures = 0;
+    this.lockouts = 0;
+    this.lockedUntil = 0;
+  }
+}
+
+export const globalPinBackoff = new GlobalPinBackoff();
