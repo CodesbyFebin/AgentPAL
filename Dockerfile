@@ -14,6 +14,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build /app/public ./public
+# Next.js loads the TypeScript config at startup.
+COPY --from=build /app/node_modules/typescript ./node_modules/typescript
 COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/src/lib/security.ts ./src/lib/security.ts
 RUN install -d -o node -g node /app/data
