@@ -9,3 +9,4 @@ data/*.json
 npm-debug.log*
 .DS_Store
 coverage
+tsconfig.tsbuildinfo

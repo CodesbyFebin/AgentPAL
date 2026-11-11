@@ -6,7 +6,7 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-geist)", "ui-sans-serif", "system-ui", "sans-serif"],
-        display: ["var(--font-sora)", "ui-sans-serif", "system-ui", "sans-serif"],
+        display: ["var(--font-geist)", "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       colors: {
@@ -27,7 +27,7 @@ const config: Config = {
         },
       },
       boxShadow: {
-        glow: "0 0 80px rgba(20, 201, 163, 0.12)",
+        glow: "0 0 80px var(--mm-glow)",
       },
     },
   },

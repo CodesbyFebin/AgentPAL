@@ -3,7 +3,41 @@
 @tailwind utilities;
 
 :root {
+  color-scheme: light;
+  --mm-bg: #f4f7fb;
+  --mm-subtle: #f8fafc;
+  --mm-surface: #ffffff;
+  --mm-ink: #111827;
+  --mm-muted: #64748b;
+  --mm-border: #e2e8f0;
+  --mm-navy: #0f1730;
+  --mm-sidebar: rgba(15, 23, 55, 0.82);
+  --mm-sidebar-text: #e8edf8;
+  --mm-sidebar-muted: #94a3b8;
+  --mm-accent: #2563eb;
+  --mm-accent-2: #7c3aed;
+  --mm-glow: rgba(37, 99, 235, 0.42);
+  --mm-success: #16a34a;
+  --mm-warning: #d97706;
+  --mm-danger: #dc2626;
+  --mm-cyan: #06b6d4;
+  --mm-shadow: 0 10px 40px rgba(15, 23, 42, 0.06);
+  --mm-radius: 18px;
+}
+
+html[data-appearance="dark"] {
   color-scheme: dark;
+  --mm-bg: var(--mm-theme-bg, #080f24);
+  --mm-subtle: #0c152c;
+  --mm-surface: var(--mm-theme-card, #111b35);
+  --mm-ink: #e8edf8;
+  --mm-muted: #94a3b8;
+  --mm-border: #263653;
+  --mm-navy: #070b18;
+  --mm-sidebar: color-mix(in srgb, var(--mm-theme-bg, #080f24) 72%, transparent);
+  --mm-sidebar-text: #e8edf8;
+  --mm-sidebar-muted: #9aa6c3;
+  --mm-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
 }
 
 html,
@@ -12,38 +46,102 @@ body {
 }
 
 body {
-  background: #07080c;
-  color: #e8ecf4;
+  background: var(--mm-bg);
+  color: var(--mm-ink);
 }
 
-.mesh-bg {
-  background-color: #07080c;
-  background-image:
-    radial-gradient(circle at 12% -10%, rgba(20, 201, 163, 0.16), transparent 42%),
-    radial-gradient(circle at 90% 0%, rgba(80, 120, 255, 0.12), transparent 36%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 28%);
+body::before {
+  content: "";
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 12% -10%, var(--mm-glow), transparent 42%),
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--mm-accent-2) 22%, transparent), transparent 36%);
 }
 
-.mesh-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.7), transparent 85%);
+#__next,
+body > * {
+  position: relative;
+  z-index: 1;
 }
 
-.card {
-  @apply rounded-2xl border border-white/10 bg-ink-800/70 backdrop-blur-md;
+.mm-sidebar {
+  background: var(--mm-sidebar);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 80px var(--mm-glow);
 }
 
+.mm-card {
+  background: var(--mm-surface);
+  border: 1px solid var(--mm-border);
+  border-radius: var(--mm-radius);
+  box-shadow: var(--mm-shadow);
+}
+
+.mm-glass {
+  background: color-mix(in srgb, var(--mm-surface) 82%, transparent);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid var(--mm-border);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.mm-focus:focus-visible {
+  outline: 2px solid var(--mm-accent);
+  outline-offset: 2px;
+}
+
+@keyframes mm-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mm-slide-up {
+  animation: mm-slide-up 0.22s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mm-slide-up,
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--mm-muted) 45%, transparent);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ag-theme-quartz,
 .ag-theme-quartz-dark {
-  --ag-background-color: #141824;
-  --ag-header-background-color: #0c0e14;
-  --ag-odd-row-background-color: #121623;
-  --ag-foreground-color: #e8ecf4;
-  --ag-header-foreground-color: #9aa3b5;
-  --ag-border-color: rgba(255, 255, 255, 0.08);
-  --ag-row-hover-color: rgba(20, 201, 163, 0.08);
-  --ag-font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ag-background-color: var(--mm-surface);
+  --ag-header-background-color: var(--mm-subtle);
+  --ag-odd-row-background-color: var(--mm-subtle);
+  --ag-foreground-color: var(--mm-ink);
+  --ag-header-foreground-color: var(--mm-muted);
+  --ag-border-color: var(--mm-border);
+  --ag-row-hover-color: color-mix(in srgb, var(--mm-accent) 8%, transparent);
+  --ag-font-family: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
   --ag-font-size: 12px;
 }

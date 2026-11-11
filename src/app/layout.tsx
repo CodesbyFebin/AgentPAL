@@ -1,15 +1,9 @@
 import type { Metadata } from "next";
-import { Sora, Source_Sans_3 } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { ModeBanner } from "@/components/ModeBanner";
 
-const sora = Sora({
-  subsets: ["latin"],
-  variable: "--font-sora",
-  display: "swap",
-});
-
-const sourceSans = Source_Sans_3({
+const inter = Inter({
   subsets: ["latin"],
   variable: "--font-geist",
   display: "swap",
@@ -23,8 +17,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sora.variable} ${sourceSans.variable}`}>
-      <body className="mesh-bg font-sans antialiased">
+    <html lang="en" className={inter.variable} data-appearance="light" data-theme="default">
+      <body className="font-sans antialiased">
         <ModeBanner />
         {children}
       </body>

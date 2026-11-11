@@ -117,6 +117,14 @@ Braintree uses the official Node SDK: a client token for Drop-in UI, `transactio
 
 Ideas inspired by [Sure](https://github.com/we-promise/sure) (AGPL-3.0); no code reused. Recurring price history, suggested→active→paused→ended lifecycles, and a tool-calling coach with logged calls are our own TypeScript implementations of those product ideas.
 
+## Interface
+
+The app is a 12-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, PayPal Vault, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is official seed data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
+
+Press **Ctrl+K** / **⌘K** for the command bar: jump to any page, run the four demo scenarios, reset the demo, switch light/dark or an accent theme, and toggle the kill switch (with a confirm step). Settings also includes a theme picker with Classic Blue plus four gradient presets (Nova Aurora, Midnight Iris, Ocean Glass, Neo Mint). The sidebar uses a frosted-glass treatment.
+
+Quick-action tiles such as “Split bill” and “Create invoice” are visible as in the mockups but disabled and marked **Not in this demo** — those features are not in the MVP.
+
 ## Setup
 
 Prerequisites: Node.js 20+ and npm.
