@@ -6,6 +6,7 @@ import { logAiCall } from "./ai-log";
 import { authorizeTool, levelForTool, parseToolArgs, redactSecrets } from "./ai-permissions";
 import { formatINR, usdToInr } from "./money";
 import { lifecycleOf } from "./subscription-metrics";
+import { consumeTradeoffApproval, findCoveringMandate, resolveCatalogSku } from "./tradeoff-approvals";
 import type { Plan, PlanStep, StoreData } from "./types";
 
 export const COACH_TOOLS = [
@@ -200,51 +201,67 @@ function dispatch(store: StoreData, name: string, args: Record<string, unknown>)
       return assessFromFinance(fin, amount, { requestLabel: String(args.label || "purchase") });
     }
     case "propose_payment":
-      // The model can never accept trade-offs for the user: only a user click (/api/purchases) can.
-      return proposePaymentIntent(store, String(args.sku || ""), { userAcceptedTradeoffs: false });
+      // The model can never accept trade-offs for the user: no approvalId is ever passed from here.
+      return proposePaymentIntent(store, String(args.sku || ""));
     default:
       throw new Error(`Unknown tool ${name}`);
   }
 }
 
-/** Creates a payment intent only. Policy may ALLOW, REQUIRE_APPROVAL, or DENY. Nothing is captured here. */
+/**
+ * Creates a payment intent only. Policy may ALLOW, REQUIRE_APPROVAL, or DENY. Nothing is captured here.
+ * Authority comes only from a user-signed mandate (never created here); trade-offs can only be accepted
+ * through a server-side approval record the user created with a click (approvalId). The coach path never
+ * passes an approvalId.
+ */
 export async function proposePaymentIntent(
   store: StoreData,
   sku: string,
-  opts: { userAcceptedTradeoffs: boolean },
+  opts: { approvalId?: string; now?: Date } = {},
 ) {
-  const merchant = store.merchants.find((m) => m.products.some((p) => p.sku === sku));
-  const product = merchant?.products.find((p) => p.sku === sku);
-  if (!merchant || !product) throw new Error(`Unknown SKU ${sku}`);
+  const found = resolveCatalogSku(store, sku);
+  if (!found) throw new Error(`Unknown SKU ${sku}`);
+  const { merchant, product } = found;
 
-  // Affordability runs for every currency (USD converted at the labelled demo rate).
-  const inrAmount = product.currency === "INR" ? product.amount : usdToInr(product.amount);
-  const analysis = assessFromFinance(store.finance, inrAmount, { requestLabel: product.name });
-  if (analysis.verdict === "NOT_RECOMMENDED") {
-    return { error: "The affordability engine does not recommend this purchase. No payment intent was created.", analysis };
-  }
-  if (analysis.verdict === "AFFORDABLE_WITH_TRADEOFFS" && !opts.userAcceptedTradeoffs) {
-    return {
-      error: "This is only affordable with trade-offs. The user must accept them with the Propose button; the coach cannot accept on their behalf. No intent was created.",
-      analysis,
-    };
-  }
-
-  // Authority comes only from a mandate the user signed. AI code never creates or widens one.
-  const mandate = store.mandates.find(
-    (m) =>
-      m.status === "active" &&
-      m.currency === product.currency &&
-      m.approved_merchants.includes(merchant.merchant_id) &&
-      m.allowed_categories.includes(product.category),
-  );
+  // 1. Mandate first (checked for existence before anything reads its fields), signature re-verified.
+  const mandate = findCoveringMandate(store, merchant, product);
   if (!mandate) {
     appendEvent(store, "coach.no_mandate", `No signed mandate covers ${product.name}; nothing was proposed.`, { sku });
     return {
+      status: "no_mandate" as const,
+      next_action: "show_mandate_signing_ui" as const,
       error: "no_matching_mandate",
       message: `No active signed mandate covers ${merchant.name} / ${product.category} in ${product.currency}. Sign one yourself (Coach → “Sign personal INR mandate”, or Agents → Mandates). The coach cannot create authority.`,
+    };
+  }
+
+  // 2. Affordability for every currency (USD converted at the labelled demo FX rate).
+  const inrAmount = product.currency === "INR" ? product.amount : usdToInr(product.amount);
+  const analysis = assessFromFinance(store.finance, inrAmount, { requestLabel: product.name });
+  if (analysis.verdict === "NOT_RECOMMENDED") {
+    return {
+      status: "not_recommended" as const,
+      error: "The affordability engine does not recommend this purchase. No payment intent was created.",
       analysis,
     };
+  }
+  if (analysis.verdict === "AFFORDABLE_WITH_TRADEOFFS") {
+    const approval = consumeTradeoffApproval(
+      store,
+      opts.approvalId,
+      { sku, amount: product.amount, currency: product.currency, merchant_id: merchant.merchant_id, mandate_id: mandate.mandate_id },
+      opts.now,
+    );
+    if (!approval.ok) {
+      appendEvent(store, "tradeoff.approval_rejected", `Trade-off approval ${approval.reason} for ${product.name}; nothing proposed.`, { sku, reason: approval.reason });
+      return {
+        status: "needs_user_approval" as const,
+        next_action: "show_tradeoff_approval_ui" as const,
+        approval_error: approval.reason,
+        error: "This is only affordable with trade-offs. The user must accept them with the “Accept trade-offs & propose” button, which creates a single-use approval on the server. The coach cannot accept on their behalf. No intent was created.",
+        analysis,
+      };
+    }
   }
 
   let goal = store.goals.find((g) => g.objective.includes(product.name));

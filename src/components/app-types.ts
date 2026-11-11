@@ -54,7 +54,7 @@ export type Snapshot = {
   goal: { goal_id: string; objective: string; budget: number; currency: string } | null;
   mandate: Mandate | null;
   mandates?: Mandate[];
-  plan: { plan_id: string; steps: unknown[]; planner: string } | null;
+  plan: { plan_id: string; steps: unknown[]; planner: string; skipped_steps?: Array<{ reason: string; message: string; product_sku?: string }> } | null;
   payments: Payment[];
   approvals: Approval[];
   verifications: unknown[];

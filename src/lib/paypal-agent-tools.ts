@@ -8,6 +8,7 @@
  * Without PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET the toolkit is not constructed and the executor
  * returns results stamped `mock: true` with a MOCK notice. Nothing mock is presented as real.
  */
+import { verifyMandateSignature } from "./engine";
 import { redactSecrets } from "./ai-permissions";
 import { appendEvent } from "./events";
 import { canonicalJson, id, nowIso } from "./ids";
@@ -221,7 +222,8 @@ function round2(n: number) {
 
 /** Finds the user-signed Coach tools mandate. Never creates one: authority comes only from a user click. */
 export function findToolkitMandate(store: StoreData): Mandate | undefined {
-  return store.mandates.find((m) => m.goal_id === TOOLKIT_GOAL_ID && m.status === "active");
+  // Only a user-signed mandate whose Ed25519 signature still verifies against this server's key.
+  return store.mandates.find((m) => m.goal_id === TOOLKIT_GOAL_ID && m.status === "active" && verifyMandateSignature(store, m));
 }
 
 /** Every order line must be a catalog product of the merchant at its catalog USD price. */

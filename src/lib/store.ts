@@ -43,6 +43,7 @@ function emptyStore(): StoreData {
     refunds: [],
     paypal_mock: { invoices: [], plans: [], products: [] },
     webhook_transmissions: [],
+    tradeoff_approvals: [],
     settings: {
       kill_switch: false,
       signing: generateEd25519Pem(),
@@ -79,6 +80,7 @@ function hydrateStore(store: StoreData) {
   store.refunds ??= [];
   store.paypal_mock ??= { invoices: [], plans: [], products: [] };
   store.webhook_transmissions ??= [];
+  store.tradeoff_approvals ??= [];
   for (const m of store.mandates) {
     m.per_tx_limit ??= m.auto_approve_limit;
     m.approval_threshold ??= m.per_tx_limit;

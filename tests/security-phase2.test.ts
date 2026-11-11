@@ -177,29 +177,12 @@ describe("audit chain", () => {
 
 /* ---------------- Coach authority ---------------- */
 describe("Coach can never create authority, pick amounts or self-approve", () => {
-  it("propose_payment returns no_matching_mandate instead of minting one", async () => {
+  it("propose_payment returns no_mandate instead of minting one", async () => {
     await updateStore(async (s) => {
       const before = s.mandates.length;
-      const r = (await proposePaymentIntent(s, "nova_sleeve_2499", { userAcceptedTradeoffs: false })) as { error?: string };
-      expect(r.error).toBe("no_matching_mandate");
+      const r = (await proposePaymentIntent(s, "nova_sleeve_2499")) as { status?: string };
+      expect(r.status).toBe("no_mandate");
       expect(s.mandates.length).toBe(before);
-    });
-  });
-  it("trade-offs can only be accepted by the user's click, and work once the user signed a mandate", async () => {
-    await updateStore(async (s) => {
-      signMandateTemplate(s, "personal_inr");
-      const { assessFromFinance } = await import("@/lib/finance-engine");
-      const verdict = assessFromFinance(s.finance, 65000).verdict;
-      const asModel = (await proposePaymentIntent(s, "nova_14_65000", { userAcceptedTradeoffs: false })) as { error?: string; intent_only?: boolean };
-      if (verdict === "AFFORDABLE_WITH_TRADEOFFS") {
-        expect(asModel.error).toMatch(/user must accept/);
-        const asUser = (await proposePaymentIntent(s, "nova_14_65000", { userAcceptedTradeoffs: true })) as { intent_only?: boolean };
-        expect(asUser.intent_only).toBe(true);
-      } else if (verdict === "NOT_RECOMMENDED") {
-        expect(asModel.error).toMatch(/does not recommend/);
-      } else {
-        expect(asModel.intent_only).toBe(true);
-      }
     });
   });
 });

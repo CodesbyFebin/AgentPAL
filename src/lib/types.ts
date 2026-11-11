@@ -82,6 +82,29 @@ export interface Plan {
   model?: string;
   status: "draft" | "approved" | "rejected";
   created_at: string;
+  /** Model-proposed steps the planner refused (unknown SKU, invalid amount). Nothing is bought for them. */
+  skipped_steps?: SkippedPlanStep[];
+}
+
+export interface SkippedPlanStep {
+  merchant_id?: string;
+  product_sku?: string;
+  reason: "unknown_merchant" | "unknown_sku" | "invalid_amount";
+  message: string;
+}
+
+/** Server-side record created only by the user's click on "Accept trade-offs & propose". */
+export interface TradeoffApproval {
+  approval_id: string;
+  sku: string;
+  merchant_id: string;
+  mandate_id: string;
+  amount: number;
+  currency: Currency;
+  created_by: "user_click";
+  created_at: string;
+  expires_at: string;
+  used_at?: string;
 }
 
 export interface TrustPassport {
@@ -651,6 +674,7 @@ export interface StoreData {
   paypal_mock: { invoices: MockPayPalObject[]; plans: MockPayPalObject[]; products: MockPayPalObject[] };
   /** Seen PayPal webhook transmission ids for replay protection. */
   webhook_transmissions: Array<{ transmission_id: string; event_id?: string; seen_at: string }>;
+  tradeoff_approvals: TradeoffApproval[];
   settings: Settings;
 }
 

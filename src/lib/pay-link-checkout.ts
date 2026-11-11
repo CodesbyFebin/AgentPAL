@@ -1,5 +1,5 @@
 import { PIXELFORGE_ID } from "./catalog";
-import { createSignedMandate, executeStep } from "./engine";
+import { executeStep, verifyMandateSignature } from "./engine";
 import { appendEvent } from "./events";
 import { LAPTOP_INR } from "./finance-constants";
 import { id, nowIso } from "./ids";
@@ -18,9 +18,11 @@ function resolveLinkProduct(store: StoreData, link: PaymentLink, mandate: Mandat
   const merchantId = link.merchant_id || mandate.approved_merchants[0];
   const merchant = store.merchants.find((m) => m.merchant_id === merchantId);
   if (!merchant) throw new Error("Merchant not found for this payment link");
-  const product =
-    (link.product_sku ? merchant.products.find((p) => p.sku === link.product_sku) : undefined) || merchant.products[0];
-  if (!product) throw new Error("No product is configured on this payment link");
+  // No silent fallback to products[0]: a SKU link must name a real catalog SKU; an open-amount link
+  // uses the merchant's own server-side category and buys no specific product.
+  if (!link.product_sku) return { merchant, product: undefined };
+  const product = merchant.products.find((p) => p.sku === link.product_sku);
+  if (!product) throw new Error(`Unknown SKU ${link.product_sku} on this payment link; nothing was charged.`);
   return { merchant, product };
 }
 
@@ -78,14 +80,14 @@ export async function startPaymentFromLink(
     action: "pay_link_checkout",
     merchant_id: merchant.merchant_id,
     merchant_name: merchant.name,
-    category: product.category,
+    category: product?.category ?? merchant.category,
     amount: requested,
     currency: found.currency,
     rail: "paypal_sandbox",
     approval_required: requested > (mandate.per_tx_limit ?? mandate.auto_approve_limit),
     rationale: `Checkout requested through signed payment link ${found.link_id}. AgentPaL Guard still evaluates the mandate.`,
-    product_sku: product.sku,
-    recurring: product.recurring,
+    product_sku: product?.sku ?? `open_amount:${found.link_id}`,
+    recurring: product?.recurring ?? false,
   };
   const plan: Plan = {
     plan_id: id("plan"),
@@ -151,36 +153,20 @@ export function ensureLaptopPayLink(store: StoreData): PaymentLink {
   );
   if (existing) return existing;
 
-  let mandate: Mandate | undefined = store.mandates.find(
+  // Never mint authority here: the link must sit on a mandate the user already signed
+  // (Coach → "Sign personal INR mandate"). Signature is re-verified before use.
+  const mandate: Mandate | undefined = store.mandates.find(
     (m) =>
       m.status === "active" &&
       m.currency === "INR" &&
       m.approved_merchants.includes(PIXELFORGE_ID) &&
       m.allowed_categories.includes("electronics") &&
-      (m.title || "").toLowerCase().includes("laptop"),
+      verifyMandateSignature(store, m),
   );
-
   if (!mandate) {
-    const goal = {
-      goal_id: id("goal"),
-      user_id: store.finance?.profile.user_id || "usr_demo",
-      objective: "Buy NovaBook 14 laptop",
-      budget: LAPTOP_INR,
-      currency: "INR" as const,
-      created_at: nowIso(),
-    };
-    store.goals.push(goal);
-    mandate = createSignedMandate(store, {
-      goal_id: goal.goal_id,
-      title: "Laptop scan-to-pay (demo)",
-      max_total_spend: LAPTOP_INR,
-      per_tx_limit: LAPTOP_INR,
-      approved_merchants: [PIXELFORGE_ID],
-      allowed_categories: ["electronics"],
-      allow_recurring: false,
-      minimum_balance: 0,
-      currency: "INR",
-    });
+    throw new Error(
+      "no_mandate: no active user-signed INR mandate covers PixelForge electronics. Sign one first (Coach → “Sign personal INR mandate”); AgentPaL never creates mandates on your behalf.",
+    );
   }
 
   return createPaymentLink(store, {

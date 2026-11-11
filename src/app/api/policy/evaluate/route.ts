@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     step_id?: string;
     merchant_id?: string;
     amount?: number;
+    product_sku?: string;
     recurring?: boolean;
   }>(req);
 
@@ -27,16 +28,19 @@ export async function POST(req: Request) {
       const mandate = store.mandates.find((m) => m.mandate_id === body.mandate_id);
       const merchant = store.merchants.find((m) => m.merchant_id === body.merchant_id);
       if (!mandate || !merchant) throw new Error("Mandate or merchant not found");
-      const amount = body.amount === undefined ? merchant.products[0].amount : body.amount;
+      // No products[0] fallback: either a real catalog SKU (server price + currency) or an explicit finite amount.
+      const product = body.product_sku ? merchant.products.find((p) => p.sku === body.product_sku) : undefined;
+      if (body.product_sku && !product) throw new Error(`Unknown SKU ${body.product_sku}`);
+      const amount = product ? product.amount : body.amount;
       if (typeof amount !== "number" || !Number.isFinite(amount)) throw new Error("amount must be a finite number");
       const remaining = remainingBudget(store, mandate.mandate_id);
       return evaluatePolicy({
         mandate,
         merchant,
         amount,
-        currency: merchant.products[0]?.currency || mandate.currency,
+        currency: product?.currency ?? mandate.currency,
         // Category always comes from the server-side merchant record, never the caller.
-        category: merchant.category,
+        category: product?.category ?? merchant.category,
         recurring: Boolean(body.recurring),
         mandateSpend: mandate.max_total_spend - remaining,
         remainingBudget: remaining,

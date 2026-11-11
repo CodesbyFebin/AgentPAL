@@ -657,11 +657,13 @@ export function CoachScreen({ state, chat, setChat, messages, analysis, askCoach
                 variant="secondary"
                 onClick={() =>
                   run("Proposing payment intent…", async () => {
-                    await fetchJson("/api/purchases", { method: "POST", body: JSON.stringify({ sku: "nova_14_65000", accept_tradeoffs: true }) });
+                    // The user's click creates a single-use server-side approval; the purchase references it.
+                    const { approval } = (await fetchJson("/api/purchases/approvals", { method: "POST", body: JSON.stringify({ sku: "nova_14_65000" }) })) as { approval: { approval_id: string } };
+                    await fetchJson("/api/purchases", { method: "POST", body: JSON.stringify({ sku: "nova_14_65000", approval_id: approval.approval_id }) });
                   }, "agents")
                 }
               >
-                Propose NovaBook 14 (intent only)
+                Accept trade-offs & propose NovaBook 14 (intent only)
               </Button>
             )}
             {!(state.mandates || []).some((m) => m.status === "active" && m.currency === "INR") && (
@@ -837,6 +839,14 @@ export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch, setP
           </div>
         </div>
       </div>
+      {(state.plan?.skipped_steps?.length ?? 0) > 0 && (
+        <Card>
+          <h3 className="font-semibold">Planner skipped {state.plan!.skipped_steps!.length} step(s)</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-amber-700" data-testid="planner-skipped">
+            {state.plan!.skipped_steps!.map((s, i) => <li key={i}>{s.message}</li>)}
+          </ul>
+        </Card>
+      )}
       <div className="grid gap-3 md:grid-cols-3">
         <Card>
           <h3 className="font-semibold">AgentPaL Coach</h3>

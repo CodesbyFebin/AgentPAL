@@ -296,8 +296,18 @@ export async function runSubscriptionScenario() {
 export async function runLaptopCoachPreview() {
   return updateStore(async (store) => {
     const result = await explainAffordability(store.finance, MONEYMATE_DEMO_PROMPT);
-    const pay_link = ensureLaptopPayLink(store);
-    return { ...result, pay_link };
+    try {
+      const pay_link = ensureLaptopPayLink(store);
+      return { ...result, pay_link };
+    } catch (err) {
+      return {
+        ...result,
+        pay_link: null,
+        status: "no_mandate" as const,
+        next_action: "show_mandate_signing_ui" as const,
+        message: err instanceof Error ? err.message : "No signed mandate.",
+      };
+    }
   });
 }
 

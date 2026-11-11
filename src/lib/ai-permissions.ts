@@ -55,21 +55,23 @@ export function authorizeTool(name: string): {
 }
 
 const schemas: Record<string, z.ZodType> = {
-  get_accounts: z.object({}).passthrough(),
+  get_accounts: z.object({}).strict(),
   get_transactions: z.object({
     limit: z.number().int().min(1).max(100).optional(),
     category: z.string().max(80).optional(),
-  }),
-  get_budget: z.object({}).passthrough(),
-  get_recurring: z.object({}).passthrough(),
-  get_goals: z.object({}).passthrough(),
+  }).strict(),
+  get_budget: z.object({}).strict(),
+  get_recurring: z.object({}).strict(),
+  get_goals: z.object({}).strict(),
   check_affordability: z.object({
     amount: z.number().finite(),
     label: z.string().max(200).optional(),
-  }),
+  }).strict(),
+  // .strict(): unknown keys (accept_tradeoffs, approval_id, amount, mandate_id…) are REJECTED, so the
+  // model cannot smuggle authority, prices or approvals into a proposal.
   propose_payment: z.object({
     sku: z.string().min(1).max(80),
-  }),
+  }).strict(),
 };
 
 export function parseToolArgs(name: string, args: unknown): { ok: true; data: Record<string, unknown> } | { ok: false; error: string } {
