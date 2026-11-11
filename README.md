@@ -58,6 +58,18 @@ Storage is a single JSON file (`data/moneymate.json`). That is a deliberate hack
 
 The AI Money Coach answers “Can I afford a ₹65,000 laptop this month? If yes, help me buy it safely.” The **engine** does the money math. The model only narrates pre-computed numbers (or a labelled offline fallback does).
 
+## Five-minute tour for judges
+
+1. Open **[Command Center](https://moneymate-mesh-8kzx.onrender.com/?tab=command-center)**. The trust score is computed on the server from 10 real checks. On the live demo it reads **52/100 (grade D)** because it runs in mock mode without PayPal or Braintree credentials and RBAC is a demo toggle. It can't reach 100 without real credentials and a real server-side PIN.
+2. Open **[Security Center](https://moneymate-mesh-8kzx.onrender.com/?tab=security)** and click **Owner (demo toggle)**. Visitors start as read-only *viewers*, and every write returns 403 until you switch.
+3. Run the scenarios from Command Center or **Ctrl+K**: A · $50 launch mandate ([Payment Methods](https://moneymate-mesh-8kzx.onrender.com/?tab=vault)), B · $30/mo subscription guardian ([Subscriptions](https://moneymate-mesh-8kzx.onrender.com/?tab=subscriptions)), C · malicious merchant + kill switch ([Agents](https://moneymate-mesh-8kzx.onrender.com/?tab=agents)), and the ₹65,000 laptop check ([AI Coach](https://moneymate-mesh-8kzx.onrender.com/?tab=coach)).
+4. **[Money OS](https://moneymate-mesh-8kzx.onrender.com/?tab=money-os)**: the order → authorize → capture → refund lifecycle, invoices, subscriptions, the read-only catalog and Pay Later messaging. Payouts, vault and shipment tracking are marked *Not part of the demo*.
+5. **[AI Agent Mesh](https://moneymate-mesh-8kzx.onrender.com/?tab=agent-mesh)**: the agent toolkit's real tool catalogue (read from the installed package), each tool's Guard status and guardrails, and an agent fleet in which no agent can create mandates, choose amounts, approve itself or capture.
+6. **[Hardening](https://moneymate-mesh-8kzx.onrender.com/?tab=hardening)**: a webhook-verification simulator (valid / replay / tampered / stale) that runs the real intake code, the idempotency store, the RBAC matrix, secrets status (configured or not, never values) and audit-chain verification plus CSV export.
+7. **[Analytics](https://moneymate-mesh-8kzx.onrender.com/?tab=analytics)**: cash flow, categories, budgets and goals computed from the **seeded INR demo data** (Priya Sharma, not a real account), plus Guard outcomes from this instance's audit log.
+
+Render's free disk is ephemeral, so after the instance restarts, run the scenarios again.
+
 ## Deterministic engine vs the AI
 
 | Job | Who does it |
@@ -137,7 +149,7 @@ Ideas inspired by [Sure](https://github.com/we-promise/sure) (AGPL-3.0); no code
 
 ## Interface
 
-The app is a 13-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Payment Links, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is seeded demo data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
+The app is a 20-screen finance shell: Dashboard, Command Center, Money OS, AI Agent Mesh, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Payment Links, Agents, Insights, Analytics, Reports, Refunds & Disputes, Invoices & Plans, Security Center, Hardening, Developer and Settings. It also has a mobile bottom nav and dark mode. Visual layout follows the attached mockups; **every balance and transaction is seeded demo data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
 
 Pages are directly linkable with `?tab=<id>` (for example `?tab=subscriptions` or `?tab=links`) and appearance with `?appearance=dark` or `?appearance=light`. Press **Ctrl+K** / **⌘K** for the command bar: jump to any page, run the four demo scenarios, reset the demo, switch light/dark or an accent theme, and toggle the kill switch (with a confirm step). Settings also includes a theme picker with Classic Blue plus four gradient presets (Nova Aurora, Midnight Iris, Ocean Glass, Neo Mint). The sidebar uses a frosted-glass treatment.
 
@@ -207,6 +219,14 @@ npm start
 - **Trade-offs need a server-side user approval.** Clicking **Accept trade-offs & propose** calls `POST /api/purchases/approvals`. That creates a single-use approval that expires after 10 minutes and is bound to the SKU, catalog amount, currency, merchant and mandate. `/api/purchases` then requires that `approval_id`; the old `accept_tradeoffs` flag is rejected. The coach's `propose_payment` schema is `.strict()`, so extra keys such as `accept_tradeoffs`, `approval_id` and `amount` are refused. Every mandate's Ed25519 signature is checked again against the server key at execution, so a tampered mandate is denied. The planner reports skipped steps ("Skipped: unknown SKU / invalid amount — nothing bought").
 - **Agents never create authority.** Mandates are signed only by an explicit user click (`POST /api/mandates/sign`). The coach and the toolkit wrapper only look mandates up. Amounts come from the server catalog, never from a model. Unknown SKUs are rejected. Only the user's own click on **Propose** can accept affordability trade-offs.
 
+## Command Center, Money OS, Agent Mesh, Hardening, Analytics (phase 3)
+
+- **Command Center** (`?tab=command-center`). It shows the score and breakdown from `GET /api/security/health` (nothing is hard-coded), the environment (payment, SDK, toolkit, planner, role mode, kill switch), Guard activity counters, and the demo scenario launchers.
+- **Money OS** (`?tab=money-os`). It shows the payment lifecycle table from real payment records, links to refunds, invoices, plans and subscriptions, the server-priced catalog, and Pay Later messaging rendered by PayPal's own `messages` component (`@paypal/react-paypal-js`). Without a sandbox client ID that spot shows a labelled placeholder. Payouts, vault and shipment tracking have no backend and are marked **Not part of the demo**.
+- **AI Agent Mesh** (`GET /api/agent-mesh`). It builds the tool list by introspecting the installed `@paypal/agent-toolkit` (27 tools in 1.11.0) and maps each tool to its AgentPaL Guard status: *Coach allowlist*, *Owner API only* or *Not enabled* (`pay_order`, `accept_dispute_claim`, shipment tracking and others). The agent fleet is a declarative config, and every agent has `can_create_mandates`, `can_choose_amounts`, `can_self_approve` and `can_capture` set to `false`.
+- **Hardening.** `POST /api/hardening/webhook-sim` runs the **real** webhook intake (headers, 5-minute window, replay cache, signature check) against a scratch store. It uses a locally generated RSA-2048 key in place of PayPal's certificate and is labelled *Local simulator, not PayPal*. `GET /api/hardening/status` returns secrets as `configured: true/false` only, the number of `NEXT_PUBLIC_*` variables, and recent idempotency keys (truncated). The screen also shows the RBAC matrix, audit-chain verify and CSV export, and the enforcing code snippets.
+- **Analytics.** Everything is derived at render time from the seeded INR finance data and the audit log, and is labelled **Seeded demo data**.
+
 ## Limits and what this does not prove
 
 - **Sandbox only.** The server SDK client is hard-wired to `Environment.Sandbox`. No live money moves.
@@ -221,7 +241,7 @@ npm start
 
 ```bash
 npm run lint    # eslint (next/core-web-vitals + next/typescript), 0 errors
-npm test        # policy, finance, receipts, PayPal SDK authorize→verify→capture/void, Guard-wrapped toolkit (vitest)
+npm test        # 144 tests: policy, finance, receipts, RBAC/PIN/lockout routes, webhook simulator, agent mesh, PayPal SDK authorize→verify→capture/void, Guard-wrapped toolkit (vitest)
 npm run build   # production Next.js build
 ```
 
@@ -239,6 +259,10 @@ Work took place **10–12 November 2026** for the PayPal AI Hackathon. Next.js i
 - Live x402 / USDC settlement
 - zkVM receipts
 - An agent marketplace
+
+## Disclaimer
+
+AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal. It runs in sandbox or labelled mock mode only. All balances and transactions are seeded demo data. No real money moves.
 
 ## License
 
