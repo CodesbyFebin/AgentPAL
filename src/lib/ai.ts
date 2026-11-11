@@ -74,6 +74,10 @@ export interface ToolCall {
   arguments: string;
 }
 
+export type ToolChatMessage = ChatMessage
+  | { role: "assistant"; content: string | null; tool_calls: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> }
+  | { role: "tool"; tool_call_id: string; content: string };
+
 export interface ChatToolsResult {
   text: string;
   model: string;
@@ -82,7 +86,7 @@ export interface ChatToolsResult {
 }
 
 export async function chatWithTools(
-  messages: ChatMessage[],
+  messages: ToolChatMessage[],
   tools: ToolSpec[],
 ): Promise<ChatToolsResult> {
   const base = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");

@@ -46,7 +46,10 @@ export async function intakePayPalWebhook(
     });
     return { status: 200, body: { ok: true, result: "duplicate_ignored", event_id: event.id } };
   }
-  const verify = opts.verifier || ((h: PayPalWebhookHeaders, e: unknown) => verifyWebhookSignature(h, e));
+  const verify = opts.verifier || (async (h: PayPalWebhookHeaders, e: unknown) => {
+    const verdict = await verifyWebhookSignature(h, e);
+    return { ok: verdict.ok && verdict.method === "paypal", status: verdict.status };
+  });
   let verdict: { ok: boolean; status: string };
   try {
     verdict = await verify(headers, event);

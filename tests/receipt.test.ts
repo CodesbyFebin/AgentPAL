@@ -1,3 +1,4 @@
+import { emptyStore } from "@/lib/store";
 import { describe, expect, it } from "vitest";
 import { chainHash, generateEd25519Pem, signPayload, verifyPayload } from "@/lib/crypto";
 import { appendEvent } from "@/lib/events";
@@ -45,7 +46,8 @@ describe("Ed25519 signing and receipt audit hash", () => {
 
   it("issues a signed receipt that verifies and fails if the total is altered", () => {
     const keys = gen();
-    const store = {
+    const store: StoreData = {
+      ...emptyStore(),
       goals: [
         {
           goal_id: "goal_001",
@@ -103,7 +105,7 @@ describe("Ed25519 signing and receipt audit hash", () => {
       evidence: [],
       plans: [],
       settings: { kill_switch: false, signing: keys },
-    } as StoreData;
+    };
 
     appendEvent(store, "payment.x402.simulated", "paid", { goal_id: "goal_001", payment_id: "pay_001" });
     const receipt = buildReceipt(store, "goal_001");

@@ -1,3 +1,4 @@
+import { ownerSessionRequired } from "./owner-session";
 import { verifyAuditChain } from "./audit";
 import { envSecretValues } from "./ai-permissions";
 import { hasBraintreeCreds } from "./payment-mode";
@@ -30,9 +31,9 @@ export function computeSecurityHealth(store: StoreData): { score: number; grade:
     {
       id: "braintree_creds",
       label: "Braintree sandbox credentials configured (server-only)",
-      passed: hasBraintreeCreds(),
+      passed: hasBraintreeCreds() && !/^(production|live)$/i.test(process.env.BRAINTREE_ENV || ""),
       weight: 10,
-      detail: hasBraintreeCreds() ? "All three Braintree keys are set on the server." : "BRAINTREE_PRIVATE_KEY (or another key) is missing.",
+      detail: hasBraintreeCreds() ? "Braintree keys are set. The scoreboard requires sandbox mode." : "BRAINTREE_PRIVATE_KEY (or another key) is missing.",
     },
     {
       id: "webhook_id",
@@ -57,24 +58,24 @@ export function computeSecurityHealth(store: StoreData): { score: number; grade:
     },
     {
       id: "no_public_secrets",
-      label: "No secrets exposed to the browser (NEXT_PUBLIC_*)",
+      label: "Public environment passes secret-name and value checks",
       passed: leakedPublic.length === 0,
       weight: 20,
       detail: leakedPublic.length === 0 ? `${publicEnv.length} NEXT_PUBLIC_* variable(s); none look like or equal a secret.` : `Suspicious public variables: ${leakedPublic.map(([k]) => k).join(", ")}`,
     },
     {
       id: "kill_switch",
-      label: "Kill switch reachable and currently off",
-      passed: !store.settings.kill_switch,
+      label: "Kill switch state available",
+      passed: typeof store.settings.kill_switch === "boolean",
       weight: 5,
       detail: store.settings.kill_switch ? "Kill switch is ON — all agent money movement is frozen." : "Kill switch is off and can be flipped from the header or the API.",
     },
     {
       id: "headers_rbac_ratelimit",
-      label: "CSP + security headers, RBAC and rate limiting enabled",
-      passed: true,
+      label: "Owner authentication configured",
+      passed: ownerSessionRequired() && (process.env.AGENTPAL_OWNER_KEY?.length ?? 0) >= 32,
       weight: 15,
-      detail: "Enforced by next.config headers() and src/middleware.ts on every /api request.",
+      detail: "A server-only owner key enables signed sessions. Credential-free mode uses demo roles.",
     },
   ];
   const total = checks.reduce((s, c) => s + c.weight, 0);

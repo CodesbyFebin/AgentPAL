@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PayPalButtons, PayPalScriptProvider } from "@paypal/react-paypal-js";
+import { PayPalButtons, PayPalMessages, PayPalScriptProvider } from "@paypal/react-paypal-js";
 
 type PayPalConfig = { mode: "sandbox" | "mock"; clientId: string | null; currency: string; intent: string };
 
@@ -70,7 +70,8 @@ export function PayPalButtonsCheckout({
       {done ? (
         <p className="text-xs text-emerald-600">Authorized and verified. Refreshing…</p>
       ) : (
-        <PayPalScriptProvider options={{ clientId: config.clientId, currency: "USD", intent: "authorize" }}>
+        <PayPalScriptProvider options={{ clientId: config.clientId, currency: "USD", intent: "authorize", components: "buttons,messages" }}>
+          <PayPalMessages amount={amountUsd} placement="payment" />
           <PayPalButtons
             style={{ layout: "horizontal", tagline: false, height: 40 }}
             fundingSource="paypal"

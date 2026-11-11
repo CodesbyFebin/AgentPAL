@@ -11,7 +11,7 @@ export function roleFromCookieHeader(cookieHeader: string | null | undefined): R
   if (!cookieHeader) return "owner";
   for (const part of cookieHeader.split(";")) {
     const [k, ...rest] = part.trim().split("=");
-    if (k === ROLE_COOKIE) return decodeURIComponent(rest.join("=")) === "viewer" ? "viewer" : "owner";
+    if (k === ROLE_COOKIE) return rest.join("=") === "viewer" ? "viewer" : "owner";
   }
   return "owner";
 }
@@ -36,7 +36,7 @@ export function rbacDecision(method: string, pathname: string, role: Role): { al
 /** Route groups that move or could move money get a tighter limit. */
 export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; windowMs: number }> = [
   { group: "payments", match: /^\/api\/(payments|paypal\/orders|refunds|purchases|pay-links\/[^/]+\/pay|steps\/[^/]+\/execute)/, limit: 20, windowMs: 60_000 },
-  { group: "paypal-tools", match: /^\/api\/(coach\/paypal-tools|invoices|paypal-plans|paypal-subscriptions)/, limit: 30, windowMs: 60_000 },
+  { group: "paypal-tools", match: /^\/api\/(coach|studio|paypal-workbench|invoices|paypal-plans|paypal-subscriptions|security\/webhook-simulator)/, limit: 30, windowMs: 60_000 },
 ];
 
 export class RateLimiter {

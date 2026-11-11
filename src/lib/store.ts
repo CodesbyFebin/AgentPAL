@@ -11,7 +11,7 @@ import type { StoreData } from "./types";
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "moneymate.json");
 
-function emptyStore(): StoreData {
+export function emptyStore(): StoreData {
   const store: StoreData = {
     goals: [],
     mandates: [],

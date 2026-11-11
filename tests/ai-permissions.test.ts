@@ -1,3 +1,4 @@
+import { emptyStore } from "@/lib/store";
 import { describe, expect, it } from "vitest";
 import { authorizeTool, levelForTool, parseToolArgs } from "@/lib/ai-permissions";
 import { runCoachTool } from "@/lib/ai-tools";
@@ -7,6 +8,7 @@ import type { StoreData } from "@/lib/types";
 
 function store(): StoreData {
   return {
+    ...emptyStore(),
     goals: [],
     mandates: [],
     plans: [],

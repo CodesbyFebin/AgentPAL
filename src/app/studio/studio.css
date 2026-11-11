@@ -1,0 +1,522 @@
+/* =========================================================================
+   AgentPAL — theme system
+   - 8 themes via [data-theme="..."]
+   - light mode via [data-mode="light"]
+   - variables: --accent, --accent2, --bg, --bg2, --glow, --card, --text,
+     --muted, --line, --glass
+   ========================================================================= */
+
+.agentpal-studio {
+  /* System font fallbacks (no network fonts in sandbox) */
+  --font-space: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  --font-plex: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
+    Menlo, Consolas, monospace;
+
+  --line: rgba(255, 255, 255, 0.12);
+  --glass: rgba(255, 255, 255, 0.06);
+}
+
+/* --- Aurora (default) --- */
+.agentpal-studio[data-theme="Aurora"] {
+  --accent: #0358f7;
+  --accent2: #fd02f5;
+  --bg: #070913;
+  --bg2: #0b0e1f;
+  --glow: rgba(3, 88, 247, 0.42);
+  --card: #121527;
+  --text: #f4f5ff;
+  --muted: #9aa0bc;
+}
+/* --- Iris --- */
+.agentpal-studio[data-theme="Iris"] {
+  --accent: #7b61ff;
+  --accent2: #00d4ff;
+  --bg: #0b071a;
+  --bg2: #140e2e;
+  --glow: rgba(123, 97, 255, 0.45);
+  --card: #17112e;
+  --text: #f4f5ff;
+  --muted: #a9a0d6;
+}
+/* --- Solar --- */
+.agentpal-studio[data-theme="Solar"] {
+  --accent: #fa3d1d;
+  --accent2: #ffd400;
+  --bg: #160b08;
+  --bg2: #24100a;
+  --glow: rgba(250, 61, 29, 0.42);
+  --card: #26120d;
+  --text: #fff6ec;
+  --muted: #d6a99a;
+}
+/* --- Ocean --- */
+.agentpal-studio[data-theme="Ocean"] {
+  --accent: #00b8c7;
+  --accent2: #5092c7;
+  --bg: #051418;
+  --bg2: #08222a;
+  --glow: rgba(0, 184, 199, 0.38);
+  --card: #0d242b;
+  --text: #eefbff;
+  --muted: #94b8be;
+}
+/* --- Mint --- */
+.agentpal-studio[data-theme="Mint"] {
+  --accent: #00c48c;
+  --accent2: #a8ff3e;
+  --bg: #07130f;
+  --bg2: #0b2018;
+  --glow: rgba(0, 196, 140, 0.38);
+  --card: #10251d;
+  --text: #f0fff8;
+  --muted: #98b8a9;
+}
+/* --- Peach --- */
+.agentpal-studio[data-theme="Peach"] {
+  --accent: #ff6b9d;
+  --accent2: #ffb86b;
+  --bg: #17101a;
+  --bg2: #241a26;
+  --glow: rgba(255, 107, 157, 0.4);
+  --card: #281d2e;
+  --text: #fff4f8;
+  --muted: #c2a8be;
+}
+/* --- Mono --- */
+.agentpal-studio[data-theme="Mono"] {
+  --accent: #e8e8e8;
+  --accent2: #8a8a8a;
+  --bg: #0a0a0a;
+  --bg2: #151515;
+  --glow: rgba(232, 232, 232, 0.22);
+  --card: #171717;
+  --text: #f5f5f5;
+  --muted: #9a9a9a;
+}
+/* --- Sunglow --- */
+.agentpal-studio[data-theme="Sunglow"] {
+  --accent: #ffaa00;
+  --accent2: #ff5e9a;
+  --bg: #181008;
+  --bg2: #251a0a;
+  --glow: rgba(255, 170, 0, 0.4);
+  --card: #271e0f;
+  --text: #fff8ea;
+  --muted: #d2b99a;
+}
+
+/* --- Light mode overrides --- */
+.agentpal-studio[data-mode="light"] {
+  --bg: #ededf5;
+  --bg2: #ffffff;
+  --text: #0b0e1f;
+  --muted: #5b6178;
+  --line: rgba(11, 14, 31, 0.1);
+  --glass: rgba(255, 255, 255, 0.55);
+  --card: #ffffff;
+}
+
+/* =========================================================================
+   Utility component classes
+   ========================================================================= */
+
+.agentpal-studio .glass {
+  background: var(--glass);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+
+.agentpal-studio .glass-sm {
+  background: var(--glass);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.agentpal-studio .grad-btn {
+  background: linear-gradient(120deg, var(--accent), var(--accent2));
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+.agentpal-studio .grad-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 8px 24px -8px var(--glow);
+}
+.agentpal-studio .grad-btn:active {
+  transform: translateY(0);
+}
+.agentpal-studio .grad-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+
+.agentpal-studio .hero-grad {
+  background: linear-gradient(
+    120deg,
+    #0358f7 0%,
+    #5092c7 20%,
+    #e1e1fe 40%,
+    #ffd400 60%,
+    #fa3d1d 80%,
+    #fd02f5 100%
+  );
+  color: #070913;
+}
+
+.agentpal-studio .shimmer-text {
+  background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent));
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: studio-shimmer 3.5s linear infinite;
+}
+
+.agentpal-studio .grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.18;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.5) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.agentpal-studio[data-mode="light"] .grain {
+  background-image: radial-gradient(rgba(11, 14, 31, 0.18) 1px, transparent 1px);
+}
+
+.agentpal-studio .glowblob {
+  position: fixed;
+  width: min(620px, 90vw);
+  height: min(620px, 90vw);
+  border-radius: 9999px;
+  background: radial-gradient(circle, var(--glow) 0%, transparent 62%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+  animation: studio-breathe 9s ease-in-out infinite;
+}
+
+.agentpal-studio .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--accent2);
+  display: inline-block;
+}
+
+.agentpal-studio .floaty {
+  animation: studio-floaty 4s ease-in-out infinite;
+}
+
+.agentpal-studio .slide-up {
+  animation: studio-slideUp 0.45s ease both;
+}
+
+.agentpal-studio .fade-in {
+  animation: studio-fadeIn 0.4s ease both;
+}
+
+.agentpal-studio .mono {
+  font-family: var(--font-plex), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.agentpal-studio .scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.agentpal-studio .scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.agentpal-studio .scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 9999px;
+}
+.agentpal-studio .scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* typing indicator dots */
+.agentpal-studio .typing {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.agentpal-studio .typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+  animation: studio-typing 1.2s ease-in-out infinite;
+}
+.agentpal-studio .typing span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.agentpal-studio .typing span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* custom toggle switch */
+.agentpal-studio .apal-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 9999px;
+  background: var(--line);
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex: none;
+}
+.agentpal-studio .apal-switch[data-on="true"] {
+  background: var(--accent);
+}
+.agentpal-studio .apal-switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+.agentpal-studio .apal-switch[data-on="true"]::after {
+  transform: translateX(18px);
+}
+
+/* =========================================================================
+   Chat message bubbles
+   ========================================================================= */
+
+.agentpal-studio .bubble {
+  border-radius: 18px;
+  padding: 12px 15px;
+  line-height: 1.6;
+  font-size: 15px;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.agentpal-studio .bubble-user {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+.agentpal-studio .bubble-assistant {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 6px;
+}
+
+/* =========================================================================
+   Markdown rendering inside assistant bubbles
+   ========================================================================= */
+
+.agentpal-studio .md {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.agentpal-studio .md > *:first-child {
+  margin-top: 0;
+}
+.agentpal-studio .md > *:last-child {
+  margin-bottom: 0;
+}
+.agentpal-studio .md p {
+  margin: 0 0 10px;
+}
+.agentpal-studio .md h1,
+.agentpal-studio .md h2,
+.agentpal-studio .md h3 {
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 18px 0 8px;
+}
+.agentpal-studio .md h1 {
+  font-size: 1.4em;
+}
+.agentpal-studio .md h2 {
+  font-size: 1.2em;
+}
+.agentpal-studio .md h3 {
+  font-size: 1.05em;
+}
+.agentpal-studio .md ul,
+.agentpal-studio .md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.agentpal-studio .md ul {
+  list-style: disc;
+}
+.agentpal-studio .md ol {
+  list-style: decimal;
+}
+.agentpal-studio .md li {
+  margin: 3px 0;
+}
+.agentpal-studio .md a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.agentpal-studio .md strong {
+  font-weight: 700;
+}
+.agentpal-studio .md em {
+  font-style: italic;
+}
+.agentpal-studio .md blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 2px 0 2px 12px;
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+.agentpal-studio .md code {
+  font-family: var(--font-plex), ui-monospace, monospace;
+  font-size: 0.86em;
+  background: rgba(127, 127, 127, 0.18);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+.agentpal-studio .md pre {
+  margin: 0 0 12px;
+}
+.agentpal-studio .md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 12px;
+  font-size: 0.9em;
+}
+.agentpal-studio .md th,
+.agentpal-studio .md td {
+  border: 1px solid var(--line);
+  padding: 6px 9px;
+  text-align: left;
+}
+.agentpal-studio .md hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 14px 0;
+}
+
+/* code block chrome */
+.agentpal-studio .codeblock {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 0 0 12px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.agentpal-studio[data-mode="light"] .codeblock {
+  background: rgba(11, 14, 31, 0.04);
+}
+.agentpal-studio .codeblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px 6px 12px;
+  font-size: 11px;
+  font-family: var(--font-plex), ui-monospace, monospace;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  background: rgba(127, 127, 127, 0.08);
+}
+.agentpal-studio .codeblock pre {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  font-family: var(--font-plex), ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* =========================================================================
+   Artifact canvas
+   ========================================================================= */
+
+.agentpal-studio .artifact-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+  border-radius: 12px;
+}
+
+/* =========================================================================
+   Keyframes
+   ========================================================================= */
+
+@keyframes studio-breathe {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    transform: scale(1.14) rotate(8deg);
+  }
+}
+
+@keyframes studio-slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes studio-floaty {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes studio-typing {
+  0%,
+  60%,
+  100% {
+    opacity: 0.4;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes studio-shimmer {
+  to {
+    background-position: 200% center;
+  }
+}
+
+@keyframes studio-fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
