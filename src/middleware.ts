@@ -9,8 +9,16 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const webhook = /^\/api\/(?:webhooks\/paypal|v1\/webhooks\/paypal|paypal\/webhook)$/.test(pathname);
   const origin = req.headers.get("origin");
-  const crossSite = req.headers.get("sec-fetch-site") === "cross-site";
-  if (!webhook && isMutatingMethod(req.method) && (crossSite || (origin && origin !== req.nextUrl.origin))) {
+  const fetchSite = req.headers.get("sec-fetch-site");
+  const allowedOrigins = [req.nextUrl.origin];
+  const host = req.headers.get("host");
+  if (host) {
+    // Next may normalize its internal URL to localhost while preserving the requested Host.
+    const forwardedProto = req.headers.get("x-forwarded-proto");
+    const protocol = forwardedProto === "https" || forwardedProto === "http" ? forwardedProto + ":" : req.nextUrl.protocol;
+    allowedOrigins.push(`${protocol}//${host}`);
+  }
+  if (!webhook && isMutatingMethod(req.method) && (fetchSite === "cross-site" || (origin && !allowedOrigins.includes(origin)))) {
     return NextResponse.json({ error: "Use the AgentPaL app origin for write requests." }, { status: 403 });
   }
 
