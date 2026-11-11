@@ -1,19 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { RateLimiter, rateLimitGroup, rbacDecision, roleFromCookieHeader } from "@/lib/security";
+import { clientKey, RateLimiter, rateLimitGroup, rbacDecision } from "@/lib/security";
+import { resolveRole } from "@/lib/owner-session";
 
 const limiter = new RateLimiter();
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const role = roleFromCookieHeader(req.headers.get("cookie"));
+  const { role } = resolveRole(req.headers.get("cookie"));
   const rbac = rbacDecision(req.method, pathname, role);
   if (!rbac.allowed) {
     return NextResponse.json({ error: rbac.reason, role }, { status: 403 });
   }
   const group = rateLimitGroup(req.method, pathname);
   if (group) {
-    const client = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-    const r = limiter.hit(`${group.group}:${client}`, group.limit, group.windowMs);
+    const r = limiter.hit(`${group.group}:${clientKey(req.headers)}`, group.limit, group.windowMs);
     if (!r.ok) {
       return NextResponse.json(
         { error: `Rate limit: at most ${group.limit} ${group.group} requests per minute. Try again shortly.` },
@@ -24,4 +24,5 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/api/:path*"] };
+// Node.js runtime so the owner-session HMAC (node:crypto) and server-only env are available.
+export const config = { matcher: ["/api/:path*"], runtime: "nodejs" };

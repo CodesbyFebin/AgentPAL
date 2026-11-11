@@ -1,6 +1,7 @@
 import { fail, ok, readJson } from "@/lib/http";
 import { updateStore } from "@/lib/store";
 import { createTradeoffApproval } from "@/lib/tradeoff-approvals";
+import { isOwnerRequest } from "@/lib/owner-session";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
  * merchant and mandate. The coach has no tool that reaches this endpoint.
  */
 export async function POST(req: Request) {
+  if (!isOwnerRequest(req)) return fail("Only the owner can accept trade-offs.", 403);
   const body = await readJson<{ sku?: string }>(req);
   if (!body.sku || typeof body.sku !== "string") return fail("sku is required");
   const result = await updateStore((store) => createTradeoffApproval(store, body.sku!));

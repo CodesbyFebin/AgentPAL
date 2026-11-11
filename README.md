@@ -135,7 +135,7 @@ Ideas inspired by [Sure](https://github.com/we-promise/sure) (AGPL-3.0); no code
 
 ## Interface
 
-The app is a 13-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Payment Links, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is official seed data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
+The app is a 13-screen finance shell (Dashboard, Transactions, Subscriptions, Budgets, AI Coach, Payment Methods, Payment Links, Agents, Insights, Reports, Settings, plus a mobile bottom nav and dark mode). Visual layout follows the attached mockups; **every balance and transaction is seeded demo data** (Priya Sharma, INR, as of 10 Nov 2026, noon IST) and is labelled as demo data. Illustrative USD figures and the “Arjun Mehta” persona from the mockups are not used.
 
 Pages are directly linkable with `?tab=<id>` (for example `?tab=subscriptions` or `?tab=links`) and appearance with `?appearance=dark` or `?appearance=light`. Press **Ctrl+K** / **⌘K** for the command bar: jump to any page, run the four demo scenarios, reset the demo, switch light/dark or an accent theme, and toggle the kill switch (with a confirm step). Settings also includes a theme picker with Classic Blue plus four gradient presets (Nova Aurora, Midnight Iris, Ocean Glass, Neo Mint). The sidebar uses a frosted-glass treatment.
 
@@ -173,6 +173,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `PAYPAL_CLIENT_SECRET` | For real sandbox | PayPal REST app secret |
 | `PAYPAL_ENV` | No (default `sandbox`) | `sandbox` or `live` |
 | `PAYPAL_WEBHOOK_ID` | For signed webhook verification | PayPal webhook ID |
+| `OWNER_PIN` | Recommended | Server-side PIN for the owner role (at least 4 characters). Without it the role switch is a labelled demo toggle |
 | `BRAINTREE_MERCHANT_ID` | For Braintree sandbox (preferred) | Braintree sandbox merchant ID |
 | `BRAINTREE_PUBLIC_KEY` | For Braintree sandbox | Braintree public key |
 | `BRAINTREE_PRIVATE_KEY` | For Braintree sandbox | Server-only private key. Never `NEXT_PUBLIC_*`. |
@@ -197,7 +198,7 @@ npm start
 
 - **Refunds & Disputes.** `POST /api/refunds` handles full and partial refunds. Each needs a reason, is capped at the captured amount minus earlier refunds, is blocked by the kill switch, and is idempotent (the `Idempotency-Key` header becomes `PayPal-Request-Id`). Disputes come from the agent toolkit (`list_disputes`) when live. In mock mode the app shows seeded examples labelled **DEMO DATA**.
 - **Invoices & Plans.** These use the agent toolkit (`create_invoice`, `send_invoice`, `list_invoices`, `create_product`, `create_subscription_plan`, `list_subscription_plans`, `cancel_subscription`) through AgentPaL Guard, owner role only. Invoices are capped at USD 500. New plans must stay under the Scenario B subscription guardian cap of USD 30/month. In mock mode, objects are stored locally and stamped `MOCK`.
-- **Security Center.** The health score is computed from real checks: credentials, webhook ID, verified webhooks, audit-chain integrity, no `NEXT_PUBLIC_*` secrets, kill switch, headers, RBAC and rate limits. The demo RBAC roles (owner and viewer) are enforced in `src/middleware.ts`. A viewer can read and can engage the kill switch, but only an owner can release it. Payment routes are rate-limited, and CSP plus other security headers are set on every response.
+- **Security Center.** The health score is computed from real checks: credentials, webhook ID, verified webhooks, audit-chain integrity, no `NEXT_PUBLIC_*` secrets, kill switch, headers, RBAC and rate limits. Header, rate-limit and RBAC checks are exercised live; nothing is a hard-coded pass. **RBAC** is enforced in `src/middleware.ts` plus route-level guards. With no cookie you are a **viewer**: you can read and engage the kill switch, and every other POST returns 403. To become **owner**, the server-side `OWNER_PIN` is required (Render env, `sync:false`, never `NEXT_PUBLIC_*`). The PIN gets you an HMAC-signed 8-hour cookie that can't be forged by editing it. If `OWNER_PIN` isn't set, the switch is labelled a **demo role toggle** and RBAC is left out of the score. Mandate signing, trade-off approvals and releasing the kill switch are owner-only. Payment routes are rate-limited per client, keyed on `True-Client-IP` or the rightmost `X-Forwarded-For` entry, never the spoofable leftmost one. CSP and other security headers are set on every response.
 - **Webhooks.** `POST /api/webhooks/paypal` verifies signatures with PayPal (`PAYPAL_WEBHOOK_ID`), enforces a 5-minute freshness window, and ignores replayed transmission IDs.
 - **Developer tab.** It shows the open-source libraries with their licenses, excerpts of the real integration code, an audit-log CSV export (formula-injection safe) and a chain verify button.
 - **Trade-offs need a server-side user approval.** Clicking **Accept trade-offs & propose** calls `POST /api/purchases/approvals`. That creates a single-use approval that expires after 10 minutes and is bound to the SKU, catalog amount, currency, merchant and mandate. `/api/purchases` then requires that `approval_id`; the old `accept_tradeoffs` flag is rejected. The coach's `propose_payment` schema is `.strict()`, so extra keys such as `accept_tradeoffs`, `approval_id` and `amount` are refused. Every mandate's Ed25519 signature is checked again against the server key at execution, so a tampered mandate is denied. The planner reports skipped steps ("Skipped: unknown SKU / invalid amount — nothing bought").
@@ -209,12 +210,14 @@ npm start
 - PayPal button, server SDK and toolkit paths stay **mock** until `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET` are set in Render. The Braintree path needs `BRAINTREE_PRIVATE_KEY`.
 - In sandbox mode the agent toolkit creates orders with its own default intent (`CAPTURE`). Coach cannot capture them, because `pay_order` is blocked. Payments that actually move money use AgentPaL's own AUTHORIZE → verify → capture path.
 - Merchant prompt-injection screening is a simple regex screen and is best-effort. The guarantee comes from **deterministic policy enforcement**: allowlist, category, caps, kill switch and reservations. Treat any text from a model or a merchant as untrusted.
-- Seeded INR finance data is demo data, not a bank connection. The ₹83 = $1 rate is a fixed demo rate.
+- Seeded INR finance data is demo data, not a bank connection. Currency conversion uses **fixed demo rates**: ₹83 = US$1, and USDC is treated 1:1 with USD on the simulated x402 rail. Other currencies are rejected rather than treated as USD.
+- **Dependency audit (`npm audit`, 11 Nov 2026): 11 findings, 10 high and 1 moderate, 0 critical.** All of them come in through `@paypal/agent-toolkit@1.11.0`, which is the latest version: `@ai-sdk/provider-utils` (high), `@langchain/core` (high), `langsmith` (high), `jsondiffpatch` (high, XSS in an HTML formatter we don't use), nested `zod` 3 (high) and `uuid` (moderate). `npm audit fix --force` would downgrade or break the toolkit, so these are accepted and documented. Before the Vitest upgrade the count was 17 (2 critical, 11 high, 4 moderate); the 2 critical findings were dev-only, from `vitest@2.1.9`/`tinypool`, and were cleared by upgrading to `vitest@4`.
 - The store is a JSON file on Render's free plan, which resets when the service restarts. It is not a production datastore.
 
 ## Tests
 
 ```bash
+npm run lint    # eslint (next/core-web-vitals + next/typescript), 0 errors
 npm test        # policy, finance, receipts, PayPal SDK authorize→verify→capture/void, Guard-wrapped toolkit (vitest)
 npm run build   # production Next.js build
 ```

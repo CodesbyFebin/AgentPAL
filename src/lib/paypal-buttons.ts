@@ -1,6 +1,6 @@
 import { appendEvent } from "./events";
 import { nowIso } from "./ids";
-import { inrToUsd } from "./money";
+import { toUsd } from "./money";
 import { createAuthorizeOrder } from "./paypal";
 import { paypalMode } from "./store";
 import type { StoreData } from "./types";
@@ -29,7 +29,7 @@ export async function createButtonsOrder(store: StoreData, paymentId: string) {
   const settlementAmount =
     payment.braintree?.settlement_amount ??
     payment.paypal?.settlement_amount ??
-    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount);
+    toUsd(payment.amount, payment.currency);
   const fx = payment.braintree || payment.paypal;
 
   const order = await createAuthorizeOrder({

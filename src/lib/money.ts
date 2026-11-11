@@ -20,6 +20,32 @@ export function usdToInr(usd: number): number {
   return roundMoney(usd * DEMO_FX.inrPerUsd);
 }
 
+export const SUPPORTED_CURRENCIES = ["INR", "USD", "USDC"] as const;
+export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
+
+function assertSupported(currency: string): asserts currency is SupportedCurrency {
+  if (!(SUPPORTED_CURRENCIES as readonly string[]).includes(currency)) {
+    throw new Error(`Unsupported currency ${currency}. This demo only converts INR, USD and USDC at fixed demo rates.`);
+  }
+}
+
+/**
+ * Converts to USD at FIXED DEMO rates (₹83 = US$1; USDC treated 1:1 with USD in the simulated x402 rail).
+ * Unsupported currencies are rejected instead of being silently treated as USD.
+ */
+export function toUsd(amount: number, currency: string): number {
+  assertSupported(currency);
+  if (!Number.isFinite(amount)) throw new Error("amount must be a finite number");
+  return currency === "INR" ? inrToUsd(amount) : roundMoney(amount);
+}
+
+/** Converts to INR at the fixed demo rate (see DEMO_FX.label). Unsupported currencies are rejected. */
+export function toInr(amount: number, currency: string): number {
+  assertSupported(currency);
+  if (!Number.isFinite(amount)) throw new Error("amount must be a finite number");
+  return currency === "INR" ? roundMoney(amount) : usdToInr(amount);
+}
+
 export function formatINR(amount: number): string {
   const abs = Math.abs(amount);
   const formatted = abs.toLocaleString("en-IN", {

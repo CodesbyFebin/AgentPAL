@@ -1,3 +1,4 @@
+import Link from "next/link";
 export default function PayPalCancelPage() {
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
@@ -6,9 +7,9 @@ export default function PayPalCancelPage() {
       <p className="mt-4 text-zinc-300">
         The PayPal checkout was cancelled. The authorization was not created and nothing was captured.
       </p>
-      <a href="/" className="mt-8 inline-block text-mesh-400 underline-offset-4 hover:underline">
+      <Link href="/" className="mt-8 inline-block text-mesh-400 underline-offset-4 hover:underline">
         Back to AgentPaL
-      </a>
+      </Link>
     </main>
   );
 }

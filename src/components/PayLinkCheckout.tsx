@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { BraintreeCheckout } from "@/components/BraintreeCheckout";
 import { Badge, Button, Card, LogoMark } from "@/components/ui/kit";
@@ -196,7 +197,7 @@ export function PayLinkCheckout({ linkId }: { linkId: string }) {
       )}
 
       <p className="mt-6 text-center text-xs text-[var(--mm-muted)]">
-        <a className="underline" href="/?tab=links">Back to AgentPaL payment links</a>
+        <Link className="underline" href="/?tab=links">Back to AgentPaL payment links</Link>
       </p>
       <ZenPauseDialog
         open={Boolean(zenRequest)}

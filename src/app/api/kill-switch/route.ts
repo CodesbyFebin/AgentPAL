@@ -3,7 +3,7 @@ import { disablePaymentLinksForKillSwitch, reenablePaymentLinksAfterKillSwitch }
 import { ok, readJson } from "@/lib/http";
 import { nowIso } from "@/lib/ids";
 import { updateStore } from "@/lib/store";
-import { roleFromCookieHeader } from "@/lib/security";
+import { isOwnerRequest } from "@/lib/owner-session";
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   const body = await readJson<{ active?: boolean }>(req);
   // Anyone may stop the agent; only the owner may resume it.
-  if (roleFromCookieHeader(req.headers.get("cookie")) === "viewer" && body.active !== true) {
+  if (!isOwnerRequest(req) && body.active !== true) {
     return NextResponse.json({ error: "Viewer role can engage the kill switch but only the owner can release it." }, { status: 403 });
   }
   const settings = await updateStore((store) => {

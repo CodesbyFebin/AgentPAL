@@ -4,7 +4,7 @@ import { executeStep } from "./engine";
 import { id, nowIso } from "./ids";
 import { logAiCall } from "./ai-log";
 import { authorizeTool, levelForTool, parseToolArgs, redactSecrets } from "./ai-permissions";
-import { formatINR, usdToInr } from "./money";
+import { formatINR, toInr } from "./money";
 import { lifecycleOf } from "./subscription-metrics";
 import { consumeTradeoffApproval, findCoveringMandate, resolveCatalogSku } from "./tradeoff-approvals";
 import type { Plan, PlanStep, StoreData } from "./types";
@@ -236,7 +236,7 @@ export async function proposePaymentIntent(
   }
 
   // 2. Affordability for every currency (USD converted at the labelled demo FX rate).
-  const inrAmount = product.currency === "INR" ? product.amount : usdToInr(product.amount);
+  const inrAmount = toInr(product.amount, product.currency); // fixed demo FX, unsupported currencies throw
   const analysis = assessFromFinance(store.finance, inrAmount, { requestLabel: product.name });
   if (analysis.verdict === "NOT_RECOMMENDED") {
     return {
@@ -306,14 +306,15 @@ export async function proposePaymentIntent(
     sku,
   });
   const execution = await executeStep(store, plan, step);
-  if (product.currency === "INR" && execution.payment) {
+  if (execution.payment) {
+    // Computed from the same affordability analysis that gated the proposal (INR at the demo FX rate).
     execution.payment.finance_impact = {
-      verdict: "AFFORDABLE_WITH_TRADEOFFS",
-      amount: product.amount,
+      verdict: analysis.verdict,
+      amount: inrAmount,
       currency: "INR",
-      available_to_spend: 0,
-      safe_spending_limit: 0,
-      contributions_paused: assessFromFinance(store.finance, product.amount).goal_impacts,
+      available_to_spend: analysis.available_to_spend,
+      safe_spending_limit: analysis.safe_spending_limit,
+      contributions_paused: analysis.goal_impacts,
     };
   }
   return { intent_only: true, captured: false, execution };

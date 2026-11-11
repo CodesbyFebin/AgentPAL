@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SEED_MERCHANTS } from "@/lib/catalog";
 import { evaluatePolicy } from "@/lib/policy";
-import { RateLimiter, rbacDecision, roleFromCookieHeader, rateLimitGroup } from "@/lib/security";
+import { RateLimiter, rbacDecision, rateLimitGroup } from "@/lib/security";
+import { resolveRole } from "@/lib/owner-session";
+const roleFromCookieHeader = (c: string | null) => resolveRole(c, {} as NodeJS.ProcessEnv).role;
 import { intakePayPalWebhook } from "@/lib/webhook-security";
 import { withIdempotency } from "@/lib/idempotency";
 import { guardedRefund } from "@/lib/refunds";
@@ -51,7 +53,8 @@ describe("RBAC and rate limiting", () => {
     expect(rbacDecision("GET", "/api/refunds", viewer).allowed).toBe(true);
     expect(rbacDecision("POST", "/api/kill-switch", viewer).allowed).toBe(true);
     expect(rbacDecision("POST", "/api/webhooks/paypal", viewer).allowed).toBe(true);
-    expect(rbacDecision("POST", "/api/refunds", roleFromCookieHeader(null)).allowed).toBe(true);
+    // No cookie now defaults to viewer (read-only).
+    expect(rbacDecision("POST", "/api/refunds", roleFromCookieHeader(null)).allowed).toBe(false);
   });
   it("rate-limits payment routes per client", () => {
     const g = rateLimitGroup("POST", "/api/payments/p1/authorize")!;

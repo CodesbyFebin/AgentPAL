@@ -1,4 +1,5 @@
-import { policyForStep } from "@/lib/engine";
+import { policyForStep, verifyMandateSignature } from "@/lib/engine";
+import { id, nowIso } from "@/lib/ids";
 import { fail, ok, readJson } from "@/lib/http";
 import { evaluatePolicy } from "@/lib/policy";
 import { remainingBudget, updateStore } from "@/lib/store";
@@ -28,6 +29,17 @@ export async function POST(req: Request) {
       const mandate = store.mandates.find((m) => m.mandate_id === body.mandate_id);
       const merchant = store.merchants.find((m) => m.merchant_id === body.merchant_id);
       if (!mandate || !merchant) throw new Error("Mandate or merchant not found");
+      if (!verifyMandateSignature(store, mandate)) {
+        return {
+          decision_id: id("pol"),
+          merchant_id: merchant.merchant_id,
+          amount: typeof body.amount === "number" ? body.amount : NaN,
+          decision: "DENY" as const,
+          reason: `Mandate ${mandate.mandate_id} failed Ed25519 signature re-verification; it may have been altered.`,
+          checks: [{ code: "mandate_signature", passed: false, detail: "Signature does not match this server's signing key." }],
+          created_at: nowIso(),
+        };
+      }
       // No products[0] fallback: either a real catalog SKU (server price + currency) or an explicit finite amount.
       const product = body.product_sku ? merchant.products.find((p) => p.sku === body.product_sku) : undefined;
       if (body.product_sku && !product) throw new Error(`Unknown SKU ${body.product_sku}`);

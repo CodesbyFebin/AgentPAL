@@ -1,4 +1,4 @@
-import { fail, ok, readJson } from "@/lib/http";
+import { ok, readJson } from "@/lib/http";
 import { updateStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";

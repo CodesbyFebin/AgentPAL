@@ -1,26 +1,19 @@
 /**
  * Edge-safe security helpers shared by middleware and routes (no Node built-ins).
- * - RBAC: demo roles "owner" (default) and "viewer", carried in the `agentpal_role` cookie and
- *   enforced server-side in middleware for every mutating /api request.
+ * - RBAC: roles "viewer" (default) and "owner". The role is resolved server-side from a signed cookie
+ *   (see owner-session.ts) and enforced in middleware for every mutating /api request.
  * - Rate limiting: fixed-window counter per client + route group for payment routes.
  */
 export type Role = "owner" | "viewer";
 export const ROLE_COOKIE = "agentpal_role";
 
-export function roleFromCookieHeader(cookieHeader: string | null | undefined): Role {
-  if (!cookieHeader) return "owner";
-  for (const part of cookieHeader.split(";")) {
-    const [k, ...rest] = part.trim().split("=");
-    if (k === ROLE_COOKIE) return decodeURIComponent(rest.join("=")) === "viewer" ? "viewer" : "owner";
-  }
-  return "owner";
-}
 
 export function isMutatingMethod(method: string): boolean {
   return !["GET", "HEAD", "OPTIONS"].includes(method.toUpperCase());
 }
 
-/** Paths a viewer may still POST to: the kill switch (route lets viewers only engage it), switching role, and PayPal webhooks (signature-verified). */
+/** Paths a viewer may still POST to: the kill switch (the route lets viewers only ENGAGE it), the role
+ * endpoint (owner requires the server-side PIN), and PayPal webhooks (signature-verified). */
 const RBAC_EXEMPT = [/^\/api\/kill-switch$/, /^\/api\/security\/role$/, /^\/api\/webhooks\//, /^\/api\/v1\/webhooks\//, /^\/api\/paypal\/webhook$/];
 
 export function rbacDecision(method: string, pathname: string, role: Role): { allowed: boolean; reason?: string } {
@@ -28,7 +21,7 @@ export function rbacDecision(method: string, pathname: string, role: Role): { al
   if (!isMutatingMethod(method)) return { allowed: true };
   if (RBAC_EXEMPT.some((r) => r.test(pathname))) return { allowed: true };
   if (role === "viewer") {
-    return { allowed: false, reason: "Viewer role is read-only. Switch to the owner role in Security Center to make changes." };
+    return { allowed: false, reason: "Viewer role is read-only (the default). Sign in as owner in Security Center to make changes." };
   }
   return { allowed: true };
 }
@@ -38,6 +31,19 @@ export const RATE_LIMITS: Array<{ group: string; match: RegExp; limit: number; w
   { group: "payments", match: /^\/api\/(payments|paypal\/orders|refunds|purchases|pay-links\/[^/]+\/pay|steps\/[^/]+\/execute)/, limit: 20, windowMs: 60_000 },
   { group: "paypal-tools", match: /^\/api\/(coach\/paypal-tools|invoices|paypal-plans|paypal-subscriptions)/, limit: 30, windowMs: 60_000 },
 ];
+
+/**
+ * Client key for rate limiting. Render (behind Cloudflare) sets True-Client-IP, which the client cannot
+ * override; otherwise we use the RIGHTMOST X-Forwarded-For entry (appended by the last proxy), never the
+ * leftmost one, which the client controls.
+ */
+export function clientKey(headers: { get(name: string): string | null }): string {
+  const trueIp = headers.get("true-client-ip")?.trim();
+  if (trueIp) return trueIp;
+  const xff = headers.get("x-forwarded-for");
+  const parts = xff ? xff.split(",").map((p) => p.trim()).filter(Boolean) : [];
+  return parts.at(-1) || "local";
+}
 
 export class RateLimiter {
   private buckets = new Map<string, { count: number; resetAt: number }>();

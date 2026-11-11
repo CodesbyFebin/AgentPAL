@@ -1,6 +1,6 @@
 import { appendEvent } from "./events";
 import { id, nowIso } from "./ids";
-import { inrToUsd } from "./money";
+import { toUsd } from "./money";
 import { refundReservedPayment } from "./payment-provider";
 import type { Payment, RefundRecord, StoreData } from "./types";
 
@@ -8,7 +8,7 @@ export function settledUsd(payment: Payment): number {
   return (
     payment.braintree?.settlement_amount ??
     payment.paypal?.settlement_amount ??
-    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount)
+    toUsd(payment.amount, payment.currency)
   );
 }
 

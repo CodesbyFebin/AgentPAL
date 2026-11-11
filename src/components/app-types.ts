@@ -1,5 +1,4 @@
 import type {
-  AffordabilityResult,
   Approval,
   AuditEvent,
   FinanceState,

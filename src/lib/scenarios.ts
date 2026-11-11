@@ -1,6 +1,6 @@
-import { DEMO_GOAL_TEXT, MONEYMATE_DEMO_PROMPT, PIXELFORGE_ID } from "./catalog";
+import { DEMO_GOAL_TEXT, MONEYMATE_DEMO_PROMPT } from "./catalog";
 import { explainAffordability } from "./coach";
-import { createSignedMandate, executeStep, issueReceipt, policyForStep } from "./engine";
+import { createSignedMandate, executeStep, policyForStep } from "./engine";
 import { appendEvent } from "./events";
 import { LAPTOP_INR } from "./finance-constants";
 import { assessFromFinance } from "./finance-engine";

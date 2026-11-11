@@ -1,8 +1,8 @@
 import { DEMO_GOAL_TEXT, SEED_MERCHANTS } from "./catalog";
 import { applyCapturedPurchase } from "./finance-apply";
 import { assessFromFinance } from "./finance-engine";
-import { findOpenIntent, intentKey, releaseReservation, reserveSpend } from "./reservations";
-import { formatMoney, fxBreakdown, inrToUsd } from "./money";
+import { findOpenIntent, intentKey, reserveSpend } from "./reservations";
+import { formatMoney, fxBreakdown, toUsd } from "./money";
 import { signPayload, verifyPayload } from "./crypto";
 import { draftEvidence } from "./evidence";
 import { appendEvent } from "./events";
@@ -348,7 +348,7 @@ export async function executeStep(
   }
 
   const settlementCurrency = "USD";
-  const settlementAmount = step.currency === "INR" ? inrToUsd(step.amount) : step.amount;
+  const settlementAmount = toUsd(step.amount, step.currency);
   const fx = step.currency === "INR" ? fxBreakdown(step.amount) : undefined;
   const session = await startPaymentCheckout({
     amount: settlementAmount,
@@ -453,7 +453,7 @@ export async function completePaymentAfterBuyer(
   const expectedAmount =
     payment.braintree?.settlement_amount ??
     payment.paypal?.settlement_amount ??
-    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount);
+    toUsd(payment.amount, payment.currency);
   const expectedCurrency = "USD";
 
   const auth = await authorizeReservedPayment({
@@ -615,7 +615,7 @@ export async function refundPayment(store: StoreData, paymentId: string) {
   const amount =
     payment.braintree?.settlement_amount ??
     payment.paypal?.settlement_amount ??
-    (payment.currency === "INR" ? inrToUsd(payment.amount) : payment.amount);
+    toUsd(payment.amount, payment.currency);
   const currency = payment.braintree?.settlement_currency || payment.paypal?.settlement_currency || "USD";
   const ref = await refundReservedPayment(captureId, payment.rail, amount, currency);
   if (payment.rail === "braintree_sandbox" && payment.braintree) {

@@ -266,17 +266,21 @@ export function InvoicesScreen({ state, run }: ScreenProps) {
 
 /* ------------------------------ Security Center ------------------------------ */
 
-type HealthData = { score: number; grade: string; role: "owner" | "viewer"; checks: Array<{ id: string; label: string; passed: boolean; weight: number; detail: string }> };
+type HealthCheckRow = { id: string; label: string; passed: boolean; weight: number; detail: string };
+type HealthData = { score: number; grade: string; role: "owner" | "viewer"; role_mode: "pin" | "demo_toggle"; checks: HealthCheckRow[]; excluded?: HealthCheckRow[] };
 
 export function SecurityScreen({ run }: ScreenProps) {
   const health = useApi<HealthData>("/api/security/health");
   const chain = useApi<{ ok: boolean; checked: number; detail: string }>("/api/audit/verify");
+  const [pin, setPin] = useState("");
   const setRole = (role: "owner" | "viewer") =>
     run(`Switching to ${role}…`, async () => {
-      await api("/api/security/role", { method: "POST", body: JSON.stringify({ role }) });
+      await api("/api/security/role", { method: "POST", body: JSON.stringify({ role, pin: role === "owner" ? pin : undefined }) });
+      setPin("");
       await health.reload();
     });
   const h = health.data;
+  const demoToggle = h?.role_mode === "demo_toggle";
   return (
     <div className="space-y-4">
       <div>
@@ -290,11 +294,26 @@ export function SecurityScreen({ run }: ScreenProps) {
           <Badge tone={h && h.score >= 75 ? "success" : "warning"}>{h ? `Grade ${h.grade}` : "loading"}</Badge>
         </Card>
         <Card>
-          <p className="text-xs uppercase tracking-wide text-[var(--mm-muted)]">Role (RBAC, enforced server-side)</p>
+          <p className="text-xs uppercase tracking-wide text-[var(--mm-muted)]">{demoToggle ? "Demo role toggle (not access control)" : "Role (RBAC, owner needs server PIN)"}</p>
           <p className="mt-2 text-2xl font-semibold capitalize">{h?.role || "…"}</p>
-          <p className="mt-1 text-xs text-[var(--mm-muted)]">A viewer can read everything and engage the kill switch. Every other POST returns 403 from middleware.</p>
+          <p className="mt-1 text-xs text-[var(--mm-muted)]">
+            Everyone starts as a viewer: you can read everything and engage the kill switch, and every other POST returns 403.{" "}
+            {demoToggle
+              ? "OWNER_PIN is not set on this server, so anyone can switch to owner here. That's why RBAC is excluded from the score."
+              : "Becoming owner takes the server-side OWNER_PIN and gives you a signed 8-hour session cookie."}
+          </p>
+          {!demoToggle && h?.role !== "owner" && (
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="Owner PIN"
+              aria-label="Owner PIN"
+              className="mt-2 w-full rounded-lg border border-[var(--mm-border)] bg-transparent px-2 py-1 text-sm"
+            />
+          )}
           <div className="mt-2 flex gap-2">
-            <Button variant={h?.role === "owner" ? "primary" : "secondary"} onClick={() => setRole("owner")}>Owner</Button>
+            <Button variant={h?.role === "owner" ? "primary" : "secondary"} onClick={() => setRole("owner")}>{demoToggle ? "Owner (demo toggle)" : "Owner"}</Button>
             <Button variant={h?.role === "viewer" ? "primary" : "secondary"} onClick={() => setRole("viewer")}>Viewer</Button>
           </div>
         </Card>
@@ -315,6 +334,15 @@ export function SecurityScreen({ run }: ScreenProps) {
                 <p className="text-xs text-[var(--mm-muted)]">{c.detail}</p>
               </div>
               <Badge tone={c.passed ? "success" : "warning"}>{c.passed ? `pass · ${c.weight}` : `open · 0/${c.weight}`}</Badge>
+            </li>
+          ))}
+          {h?.excluded?.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-start justify-between gap-2 rounded-xl border border-dashed border-[var(--mm-border)] p-2 text-sm opacity-80">
+              <div>
+                <p className="font-medium">{c.label}</p>
+                <p className="text-xs text-[var(--mm-muted)]">{c.detail}</p>
+              </div>
+              <Badge tone="neutral">excluded from score</Badge>
             </li>
           ))}
         </ul>

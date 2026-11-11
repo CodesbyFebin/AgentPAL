@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef, GridReadyEvent, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
+import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { formatINR, formatMoney } from "@/lib/money";
@@ -120,7 +120,6 @@ export function TransactionsGrid({
           rowHeight={38}
           getRowId={(p) => p.data.txn_id}
           onRowClicked={(e: RowClickedEvent<LedgerTxn>) => setSelected(e.data ?? null)}
-          onGridReady={(_e: GridReadyEvent) => undefined}
         />
       </div>
       {selected && (

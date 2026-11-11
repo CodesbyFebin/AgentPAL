@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -41,9 +42,9 @@ function ReturnInner() {
       <p className="text-xs uppercase tracking-[0.2em] text-mesh-400">AgentPaL · checkout return</p>
       <h1 className="mt-3 font-display text-3xl text-white">Buyer approval received</h1>
       <p className="mt-4 text-zinc-300">{error ?? status}</p>
-      <a href="/" className="mt-8 inline-block text-mesh-400 underline-offset-4 hover:underline">
+      <Link href="/" className="mt-8 inline-block text-mesh-400 underline-offset-4 hover:underline">
         Back to AgentPaL
-      </a>
+      </Link>
     </main>
   );
 }

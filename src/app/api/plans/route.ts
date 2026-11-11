@@ -14,7 +14,9 @@ export async function POST(req: Request) {
   const body = await readJson<{ goal_id?: string; mandate_id?: string }>(req);
   try {
     const plan = await updateStore(async (store) => {
-      const goal = store.goals.find((g) => g.goal_id === body.goal_id) ?? store.goals.at(-1);
+      // No "latest goal" fallback: the caller must name the goal explicitly.
+      if (!body.goal_id) throw new Error("goal_id is required");
+      const goal = store.goals.find((g) => g.goal_id === body.goal_id);
       if (!goal) throw new Error("Goal not found");
       const mandate =
         store.mandates.find((m) => m.mandate_id === body.mandate_id) ??
