@@ -98,7 +98,7 @@ export async function createAuthorizeOrder(opts: {
       paypal: {
         experience_context: {
           payment_method_preference: "IMMEDIATE_PAYMENT_REQUIRED",
-          brand_name: "MoneyMate AI",
+          brand_name: "AgentPaL",
           landing_page: "NO_PREFERENCE",
           user_action: "PAY_NOW",
           return_url: opts.returnUrl,

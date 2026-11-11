@@ -43,9 +43,32 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+
+const PAGE_IDS = new Set<PageId>(PAGES.map((p) => p.id));
+
+function readSearch(): { tab: PageId; appearance: Appearance | null } {
+  if (typeof window === "undefined") return { tab: "dashboard", appearance: null };
+  const params = new URLSearchParams(window.location.search);
+  const rawTab = params.get("tab");
+  const tab = rawTab && PAGE_IDS.has(rawTab as PageId) ? (rawTab as PageId) : "dashboard";
+  const rawApp = params.get("appearance");
+  const appearance = rawApp === "dark" || rawApp === "light" ? rawApp : null;
+  return { tab, appearance };
+}
+
+function writeSearch(tab: PageId, appearance: Appearance) {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("tab", tab);
+  url.searchParams.set("appearance", appearance);
+  const next = `${url.pathname}?${url.searchParams.toString()}${url.hash}`;
+  const cur = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (next !== cur) window.history.replaceState(null, "", next);
+}
+
 export function MoneyMateMesh() {
   const [state, setState] = useState<Snapshot | null>(null);
-  const [page, setPage] = useState<PageId>("dashboard");
+  const [page, setPageState] = useState<PageId>("dashboard");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chat, setChat] = useState(MONEYMATE_DEMO_PROMPT);
@@ -60,9 +83,29 @@ export function MoneyMateMesh() {
 
   useEffect(() => {
     const prefs = parseThemePrefs(typeof window !== "undefined" ? localStorage.getItem(THEME_STORAGE_KEY) : null);
-    setAppearanceState(prefs.appearance);
+    const search = readSearch();
+    const appearanceNext = search.appearance ?? prefs.appearance;
+    setAppearanceState(appearanceNext);
     setThemeIdState(prefs.themeId);
-    applyThemeToDocument(prefs);
+    applyThemeToDocument({ appearance: appearanceNext, themeId: prefs.themeId });
+    setPageState(search.tab);
+    writeSearch(search.tab, appearanceNext);
+  }, []);
+
+  useEffect(() => {
+    const onPop = () => {
+      const search = readSearch();
+      setPageState(search.tab);
+      if (search.appearance) {
+        const stored = parseThemePrefs(localStorage.getItem(THEME_STORAGE_KEY));
+        const prefs = { appearance: search.appearance, themeId: stored.themeId };
+        localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(prefs));
+        applyThemeToDocument(prefs);
+        setAppearanceState(search.appearance);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
   const persistTheme = (appearanceNext: Appearance, themeNext: AccentThemeId) => {
@@ -71,9 +114,15 @@ export function MoneyMateMesh() {
     applyThemeToDocument(prefs);
   };
 
+  const setPage = (p: PageId) => {
+    setPageState(p);
+    writeSearch(p, appearance);
+  };
+
   const setAppearance = (a: Appearance) => {
     setAppearanceState(a);
     persistTheme(a, themeId);
+    writeSearch(page, a);
   };
   const setThemeId = (id: AccentThemeId) => {
     setThemeIdState(id);
@@ -151,7 +200,7 @@ export function MoneyMateMesh() {
   if (!state) {
     return (
       <main className="px-6 py-16 text-[var(--mm-muted)]">
-        Loading MoneyMate Mesh…
+        Loading AgentPaL…
         {error && <p className="mt-3 text-rose-600">{error}</p>}
       </main>
     );

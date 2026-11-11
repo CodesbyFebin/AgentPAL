@@ -91,7 +91,7 @@ function formatSummary(opts: {
   outcome: Receipt["outcome"];
 }): string {
   const lines = [
-    `MeshPaL Receipt`,
+    `AgentPaL Receipt`,
     `Task: ${opts.goal}`,
     `Outcome: ${opts.outcome}`,
     ``,

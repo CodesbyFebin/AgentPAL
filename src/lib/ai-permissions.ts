@@ -48,7 +48,7 @@ export function authorizeTool(name: string): {
       allowed: false,
       level,
       reason:
-        "L3 execute is forbidden for the model. Captures, refunds, mandate signatures, and cancellations are performed by a human and the MeshPaL backend, never by the AI.",
+        "L3 execute is forbidden for the model. Captures, refunds, mandate signatures, and cancellations are performed by a human and the AgentPaL Guard backend, never by the AI.",
     };
   }
   return { allowed: false, level: "unknown", reason: `Unknown tool ${name} is not on the L1/L2 allowlist.` };

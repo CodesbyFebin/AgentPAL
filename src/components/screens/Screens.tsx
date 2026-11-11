@@ -73,32 +73,37 @@ function dayKey(iso: string) {
   return iso.slice(0, 10);
 }
 
-function weeklySeries(txns: LedgerTxn[]) {
-  const weeks: { start: string; income: number; spend: number }[] = [];
+function dailyCumulativeSeries(txns: LedgerTxn[]) {
   const sorted = [...txns].sort((a, b) => a.posted_at.localeCompare(b.posted_at));
   if (!sorted.length) return { labels: [] as string[], income: [] as number[], spend: [] as number[] };
   const start = new Date(sorted[0].posted_at);
   const end = new Date(sorted[sorted.length - 1].posted_at);
   const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
-  while (cursor <= end) {
-    const key = cursor.toISOString().slice(0, 10);
-    weeks.push({ start: key, income: 0, spend: 0 });
-    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  const last = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+  const byDay = new Map<string, { income: number; spend: number }>();
+  while (cursor <= last) {
+    byDay.set(cursor.toISOString().slice(0, 10), { income: 0, spend: 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   for (const t of sorted) {
-    const idx = Math.max(
-      0,
-      Math.min(weeks.length - 1, Math.floor((new Date(t.posted_at).getTime() - new Date(weeks[0].start).getTime()) / (7 * 86400000))),
-    );
-    if (t.amount > 0 && t.category !== "Transfers") weeks[idx].income += t.amount;
-    if (t.amount < 0 && t.category !== "Transfers") weeks[idx].spend += Math.abs(t.amount);
+    const row = byDay.get(t.posted_at.slice(0, 10));
+    if (!row) continue;
+    if (t.amount > 0 && t.category !== "Transfers") row.income += t.amount;
+    if (t.amount < 0 && t.category !== "Transfers") row.spend += Math.abs(t.amount);
   }
-  const last = weeks.slice(-8);
-  return {
-    labels: last.map((w) => w.start.slice(5)),
-    income: last.map((w) => Math.round(w.income)),
-    spend: last.map((w) => Math.round(w.spend)),
-  };
+  const labels: string[] = [];
+  const income: number[] = [];
+  const spend: number[] = [];
+  let inc = 0;
+  let sp = 0;
+  for (const [day, row] of byDay) {
+    inc += row.income;
+    sp += row.spend;
+    labels.push(day.slice(5));
+    income.push(Math.round(inc));
+    spend.push(Math.round(sp));
+  }
+  return { labels, income, spend };
 }
 
 function topMerchants(txns: LedgerTxn[], month: string, limit = 5) {
@@ -115,8 +120,8 @@ export function DemoDisclaimer() {
   return (
     <p className="rounded-2xl border border-amber-200/80 bg-amber-50 px-4 py-3 text-xs text-amber-900 dark-note">
       All balances, transactions, budgets, bills and subscriptions shown here are seeded demo data, not a live bank or
-      personal PayPal history. MoneyMate Mesh is a hackathon project built on PayPal APIs and is not a PayPal product or
-      endorsement. {asOfLabel()}.
+      personal PayPal history. AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal
+      product and is not endorsed by PayPal. {asOfLabel()}.
     </p>
   );
 }
@@ -137,7 +142,7 @@ export function DashboardScreen({
   const spent = budgets.reduce((s, b) => s + b.spent, 0);
   const limit = budgets.reduce((s, b) => s + b.monthly_limit, 0);
   const onTrack = limit ? Math.round(((limit - spent) / limit) * 100) : 0;
-  const chart = weeklySeries(state.finance.transactions);
+  const chart = dailyCumulativeSeries(state.finance.transactions);
   const recent = [...state.finance.transactions].sort((a, b) => b.posted_at.localeCompare(a.posted_at)).slice(0, 5);
   const pending = state.approvals.filter((a) => a.status === "pending");
   const seedSubs = state.finance.transactions.filter((t) => t.category === "Entertainment" && t.amount < 0);
@@ -154,8 +159,8 @@ export function DashboardScreen({
           <div className="flex items-center gap-4">
             <RobotMascot className="h-24 w-24 shrink-0 md:h-28 md:w-28" />
             <div>
-              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Smarter Money. Powered by AI.</h2>
-              <p className="mt-1 max-w-xl text-sm text-white/80">Your personal finance copilot, with PayPal at the core of sandbox checkout — not as an endorsement.</p>
+              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">AgentPaL — Your AI. Your Money. Your Rules.</h2>
+              <p className="mt-1 max-w-xl text-sm text-white/80">AgentPaL Coach explains the numbers; AgentPaL Guard enforces your mandate. Sandbox checkout uses PayPal APIs — AgentPaL is not a PayPal product or endorsement.</p>
               <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/85">
                 <li className="flex items-center gap-1"><Check size={14} /> Auto-track app subscriptions</li>
                 <li className="flex items-center gap-1"><Check size={14} /> Smart spending insights</li>
@@ -191,7 +196,7 @@ export function DashboardScreen({
         <Card className="xl:col-span-3">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Spending Overview</h3>
-            <span className="text-xs text-[var(--mm-muted)]">Weekly · last 8 weeks of seed ledger</span>
+            <span className="text-xs text-[var(--mm-muted)]">Daily cumulative · seed ledger, transfers excluded</span>
           </div>
           <LineChart
             series={[
@@ -324,7 +329,7 @@ export function DashboardScreen({
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <h3 className="font-semibold">MeshPaL AI Assistant</h3>
+          <h3 className="font-semibold">AgentPaL Coach</h3>
           <p className="mt-1 text-sm text-[var(--mm-muted)]">
             Hi {DEMO_USER_NAME.split(" ")[0]} — here is a snapshot computed by the finance engine, not by the model.
           </p>
@@ -385,7 +390,7 @@ export function TransactionsScreen({ state }: ScreenProps) {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-xl font-semibold">Transactions</h2>
-          <p className="text-sm text-[var(--mm-muted)]">Evidence browser for the seed ledger and MeshPaL payments. Every row is labelled demo data.</p>
+          <p className="text-sm text-[var(--mm-muted)]">Evidence browser for the seed ledger and AgentPaL Guard payments. Every row is labelled demo data.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <input
@@ -428,7 +433,7 @@ export function TransactionsScreen({ state }: ScreenProps) {
       </Card>
       {state.payments.length > 0 && (
         <Card>
-          <h3 className="font-semibold">MeshPaL payments</h3>
+          <h3 className="font-semibold">AgentPaL Guard payments</h3>
           <ul className="mt-3 space-y-2 text-sm">
             {state.payments.map((p) => (
               <li key={p.payment_id} className="flex flex-wrap items-center justify-between gap-2">
@@ -449,7 +454,7 @@ export function SubscriptionsScreen({ state, run }: ScreenProps) {
       <div>
         <h2 className="text-xl font-semibold">Subscriptions</h2>
         <p className="mt-1 text-sm text-[var(--mm-muted)]">
-          Only subscriptions created through the MoneyMate Mesh merchant integration are managed. We do not intercept every
+          Only subscriptions created through the AgentPaL merchant integration are managed. We do not intercept every
           renewal across a consumer PayPal account. Sandbox billing does not fire on cue — use the labelled replay button.
           Cancelling is simulated unless PayPal REST credentials are set; Braintree subscription plans are not configured in this demo.
         </p>
@@ -580,9 +585,9 @@ export function CoachScreen({ state, chat, setChat, messages, analysis, askCoach
         <div className="flex items-start gap-3">
           <RobotMascot className="h-16 w-16 shrink-0" />
           <div>
-            <h2 className="text-xl font-semibold">AI Coach — your personal finance assistant</h2>
+            <h2 className="text-xl font-semibold">AgentPaL Coach — your personal finance assistant</h2>
             <p className="mt-1 text-sm text-[var(--mm-muted)]">
-              The coach explains numbers that a deterministic engine already computed. It cannot pay — it can only propose an intent for MeshPaL.
+              The coach explains numbers that a deterministic engine already computed. It cannot pay — it can only propose an intent for AgentPaL Guard.
             </p>
           </div>
         </div>
@@ -684,7 +689,7 @@ export function VaultScreen({ state, run }: ScreenProps) {
         <div>
           <h2 className="text-xl font-semibold">Payment Methods</h2>
           <p className="mt-1 max-w-2xl text-sm text-[var(--mm-muted)]">
-            Connection status and sandbox checkout. MoneyMate Mesh does not store card PANs or PayPal passwords. A payment
+            Connection status and sandbox checkout. AgentPaL does not store card PANs or PayPal passwords. A payment
             method nonce is collected only at checkout when Braintree is configured. {DEMO_FX.label}
           </p>
         </div>
@@ -757,14 +762,14 @@ export function AgentsScreen({ state, run, runScenario, onToggleKillSwitch }: Sc
         <div className="flex items-center gap-4">
           <RobotMascot className="h-16 w-16" />
           <div>
-            <h2 className="text-xl font-semibold">MeshPaL Agents</h2>
+            <h2 className="text-xl font-semibold">AgentPaL Agents</h2>
             <p className="text-sm text-white/80">Let AI handle the routine. You stay in control. Agents may propose; policy still decides ALLOW / REQUIRE_APPROVAL / DENY.</p>
           </div>
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <Card>
-          <h3 className="font-semibold">MoneyMate Coach</h3>
+          <h3 className="font-semibold">AgentPaL Coach</h3>
           <p className="mt-1 text-sm text-[var(--mm-muted)]">Read-only finance tools + propose_payment. Mode: {state.modes.planner.planner}.</p>
           <Badge tone="success">Active</Badge>
         </Card>
@@ -907,7 +912,7 @@ export function ReportsScreen({ state, run, verifyResult, setVerifyResult }: Scr
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "moneymate-seed-transactions.csv";
+    a.download = "agentpal-seed-transactions.csv";
     a.click();
     URL.revokeObjectURL(url);
   };

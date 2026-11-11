@@ -108,7 +108,7 @@ export function TransactionsGrid({
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">Transactions ledger · filter or sort by category or merchant (Community grid)</p>
-        {csvButton(gridRef.current?.api ?? null, "moneymate-mesh-transactions.csv")}
+        {csvButton(gridRef.current?.api ?? null, "agentpal-transactions.csv")}
       </div>
       <div className="ag-theme-quartz-dark h-[380px] w-full overflow-hidden rounded-xl border border-white/10">
         <AgGridReact
@@ -179,7 +179,7 @@ export function AuditTrailGrid({ events }: { events: AuditEvent[] }) {
     <div>
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-400">Hash-chained audit trail · click a row to expand the payload in a detail drawer</p>
-        {csvButton(gridRef.current?.api ?? null, "moneymate-mesh-audit.csv")}
+        {csvButton(gridRef.current?.api ?? null, "agentpal-audit.csv")}
       </div>
       <div className="ag-theme-quartz-dark h-[420px] w-full overflow-hidden rounded-xl border border-white/10">
         <AgGridReact

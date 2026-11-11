@@ -7,7 +7,7 @@ export const PIXELFORGE_MERCHANT: Merchant = {
   name: "PixelForge Electronics (demo)",
   category: "electronics",
   description:
-    "Demo consumer electronics seller used for the MoneyMate laptop checkout. Catalog text is untrusted data, not policy instructions.",
+    "Demo consumer electronics seller used for the AgentPaL laptop checkout. Catalog text is untrusted data, not policy instructions.",
   products: [
     {
       sku: "nova_14_65000",
@@ -57,7 +57,7 @@ export const SUBSCRIPTION_MERCHANTS: Merchant[] = [
     merchant_id: "merchant_clouddraw",
     name: "CloudDraw Pro (demo)",
     category: "software",
-    description: "Demo design-software subscription created through the MoneyMate Mesh merchant integration.",
+    description: "Demo design-software subscription created through the AgentPaL merchant integration.",
     products: [
       { sku: "clouddraw_monthly", name: "CloudDraw Pro monthly", amount: 12, currency: "USD", category: "software", recurring: true },
       { sku: "clouddraw_monthly_increased", name: "CloudDraw Pro monthly (price increase)", amount: 16, currency: "USD", category: "software", recurring: true },
@@ -81,7 +81,7 @@ export const SUBSCRIPTION_MERCHANTS: Merchant[] = [
     merchant_id: "merchant_logsense",
     name: "Logsense (demo)",
     category: "software",
-    description: "Demo observability subscription created through MoneyMate Mesh.",
+    description: "Demo observability subscription created through AgentPaL.",
     products: [
       { sku: "logsense_monthly", name: "Logsense Team monthly", amount: 10, currency: "USD", category: "software", recurring: true },
     ],
@@ -104,7 +104,7 @@ export const SUBSCRIPTION_MERCHANTS: Merchant[] = [
     merchant_id: "merchant_stackmail",
     name: "StackMail (demo)",
     category: "software",
-    description: "Demo email-tool subscription created through MoneyMate Mesh.",
+    description: "Demo email-tool subscription created through AgentPaL.",
     products: [
       { sku: "stackmail_monthly", name: "StackMail monthly", amount: 8, currency: "USD", category: "software", recurring: true },
     ],

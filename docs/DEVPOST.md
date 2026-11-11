@@ -1,14 +1,16 @@
-# Devpost description draft — MoneyMate Mesh
+# Devpost description draft — AgentPaL
 
 **Tagline:** Your AI. Your Money. Your Rules.
 
-**Elevator:** MoneyMate Mesh is the trust layer between AI agents and your money. MoneyMate is the financial brain that can tell you, with deterministic math, whether you can afford a ₹65,000 laptop this month. MeshPaL is the execution layer that lets an agent prepare a sandbox payment only inside a signed mandate, with human approval, a kill switch, and a receipt you can verify.
+**Disclaimer:** AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal.
+
+**Elevator:** AgentPaL is the trust layer between AI agents and your money. AgentPaL Coach is the financial brain that can tell you, with deterministic math, whether you can afford a ₹65,000 laptop this month. AgentPaL Guard is the execution layer that lets an agent prepare a sandbox payment only inside a signed mandate, with human approval, a kill switch, and a receipt you can verify.
 
 ## Inspiration
 
 Agentic commerce is arriving faster than the controls around it. Chatbots already give spending advice, and PayPal already moves money. The missing piece is a product that lets a human delegate a problem — "get the launch tools under $50," "don't let software subscriptions exceed $30/month" — while keeping the last word on anything that looks risky, recurring, or hostile.
 
-Sure-inspired intelligence tells the system what is happening, MoneyMate understands what the user can afford, and MeshPaL determines what the AI is allowed to do.
+Sure-inspired intelligence tells the system what is happening, AgentPaL Coach understands what the user can afford, and AgentPaL Guard determines what the AI is allowed to do.
 
 ## What it does
 
@@ -40,6 +42,6 @@ CSV import, investments, family permissions, multi-bank connections, universal s
 
 ## AI tools used
 
-OpenAI-compatible Chat Completions (optional) for the MoneyMate coach, with tool calling (get_accounts, get_transactions, get_budget, get_recurring, get_goals, check_affordability, propose_payment). A labelled offline fallback when no key is set. Optional evidence drafts. AI coding assistance was used during 10–12 November 2026.
+OpenAI-compatible Chat Completions (optional) for the AgentPaL Coach, with tool calling (get_accounts, get_transactions, get_budget, get_recurring, get_goals, check_affordability, propose_payment). A labelled offline fallback when no key is set. Optional evidence drafts. AI coding assistance was used during 10–12 November 2026.
 
 Ideas inspired by Sure (AGPL-3.0); no code reused.

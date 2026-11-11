@@ -86,12 +86,12 @@ export async function runBuySafelyScenario() {
       paypalStep(store, {
         action: "purchase_api_credits",
         merchant_id: "merchant_001",
-        rationale: "DevTools AI is on the allowlist. $8 is under the $10 per-transaction limit, so MeshPaL can ALLOW it without a human, then start a sandbox checkout (authorize, verify, capture).",
+        rationale: "DevTools AI is on the allowlist. $8 is under the $10 per-transaction limit, so AgentPaL Guard can ALLOW it without a human, then start a sandbox checkout (authorize, verify, capture).",
       }),
       paypalStep(store, {
         action: "register_domain",
         merchant_id: "merchant_002",
-        rationale: "The $12 domain is over the $10 per-transaction limit, so MeshPaL requires your approval before any payment processor call completes.",
+        rationale: "The $12 domain is over the $10 per-transaction limit, so AgentPaL Guard requires your approval before any payment processor call completes.",
       }),
     ];
     const plan: Plan = {
@@ -237,7 +237,7 @@ export async function runSubscriptionScenario() {
     appendEvent(store, "demo.started", "Scenario B — Subscription guardian", {
       prompt: "Don't let my software subscriptions exceed $30/month",
       scope:
-        "Only subscriptions created through the MoneyMate Mesh merchant integration are managed. We do not intercept every renewal on a consumer PayPal account.",
+        "Only subscriptions created through the AgentPaL merchant integration are managed. We do not intercept every renewal on a consumer PayPal account.",
     });
 
     const goal: Goal = {

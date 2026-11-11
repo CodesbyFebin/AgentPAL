@@ -14,7 +14,7 @@ export async function GET() {
     })),
     reviews: s.renewal_reviews,
     disclaimer:
-      "Only subscriptions created through the MoneyMate Mesh merchant integration are managed. We do not intercept every renewal across a consumer PayPal account.",
+      "Only subscriptions created through the AgentPaL merchant integration are managed. We do not intercept every renewal across a consumer PayPal account.",
   }));
   return ok(data);
 }

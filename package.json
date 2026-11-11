@@ -1,9 +1,9 @@
 {
-  "name": "moneymate-mesh",
+  "name": "agentpal",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "MoneyMate Mesh — Your AI. Your Money. Your Rules. An AI financial agent with a MeshPaL trust and execution layer, built for the PayPal AI Hackathon.",
+  "description": "AgentPaL — Your AI. Your Money. Your Rules. An AI financial agent with an AgentPaL Guard trust and execution layer, built for the PayPal AI Hackathon.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

@@ -112,11 +112,11 @@ export function ControlTower() {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-mesh-500/15 ring-1 ring-mesh-400/30">
-              <span className="font-display text-lg text-mesh-400">M</span>
+              <span className="font-display text-lg text-mesh-400">A</span>
             </div>
             <div>
-              <p className="font-display text-lg tracking-tight text-white">MeshPaL</p>
-              <p className="text-xs text-zinc-400">The trust layer between AI agents and PayPal</p>
+              <p className="font-display text-lg tracking-tight text-white">AgentPaL</p>
+              <p className="text-xs text-zinc-400">Your AI. Your Money. Your Rules.</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -162,7 +162,7 @@ export function ControlTower() {
               <span className="block text-mesh-300">A verified outcome is.</span>
             </h1>
             <p className="mt-4 max-w-2xl text-zinc-400">
-              MeshPaL lets you delegate a real-world goal to an AI agent under an Ed25519-signed
+              AgentPaL lets you delegate a real-world goal to an AI agent under an Ed25519-signed
               mandate. The policy engine decides allow, block, or ask you. Micro-purchases can
               settle on a clearly labeled simulated x402 rail. Larger purchases use PayPal Orders
               v2 with <span className="text-zinc-200">intent=AUTHORIZE</span>, then capture only
@@ -419,7 +419,7 @@ export function ControlTower() {
                 <p className="font-medium">Prompt-injection merchant blocked</p>
                 <p className="mt-1 text-rose-100/80">{String(injectionDecision.payload.reason || injectionDecision.message)}</p>
                 <p className="mt-2 text-xs text-rose-200/70">
-                  ShadowCart’s listing told the agent to ignore limits. MeshPaL treated that text as
+                  ShadowCart’s listing told the agent to ignore limits. AgentPaL Guard treated that text as
                   untrusted data and refused the payment.
                 </p>
               </div>
@@ -597,8 +597,7 @@ export function ControlTower() {
         </section>
 
         <footer className="pb-10 text-center text-xs text-zinc-600">
-          MeshPaL is built on PayPal developer APIs. It is not affiliated with, endorsed by, or a
-          product of PayPal, Inc. x402 in this demo is simulated. zkVM receipts and a live provider
+          AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal. x402 in this demo is simulated. zkVM receipts and a live provider
           registry are on the roadmap, not in this MVP.
         </footer>
       </main>

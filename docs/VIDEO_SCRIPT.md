@@ -1,7 +1,7 @@
 # Demo video script (under 3:00)
 
-On-screen title: MoneyMate Mesh — Your AI. Your Money. Your Rules.
-Spoken name: "MoneyMate Mesh." Do not imply PayPal built or endorses this. Say "built on PayPal sandbox APIs."
+On-screen title: AgentPaL — Your AI. Your Money. Your Rules.
+Spoken name: "AgentPaL." Say: "AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal." Do not imply PayPal built or endorses this. Say "built on PayPal sandbox APIs."
 
 ## 0:00-0:20 · Problem
 
@@ -17,7 +17,7 @@ Show the verdict card: available-to-spend, safe limit, trade-offs (pause this mo
 
 ## 0:45-1:15 · Mandate, $50
 
-Run A · Buy safely. Open Mandates & Safety. Point to the signed $50 mandate: total limit $50, per-transaction $10, merchant and category allowlists, recurring off, expiry. "This is MeshPaL — the trust layer."
+Run A · Buy safely. Open Mandates & Safety. Point to the signed $50 mandate: total limit $50, per-transaction $10, merchant and category allowlists, recurring off, expiry. "This is AgentPaL Guard — the trust layer."
 
 ## 1:15-1:45 · Purchases, approval, PayPal
 
@@ -41,4 +41,4 @@ CloudDraw, Logsense, StackMail sit at $30/month. Click Replay webhook (sandbox b
 
 Open Transactions and Audit & Receipts. Filter the AG Grid, open a row's detail drawer, export CSV, show the hash chain.
 
-Close on the tagline: "Your AI. Your Money. Your Rules. MoneyMate Mesh — the AI proposes, you approve, PayPal and the backend verify."
+Close on the tagline: "Your AI. Your Money. Your Rules. AgentPaL — the AI proposes, you approve, PayPal and the backend verify."

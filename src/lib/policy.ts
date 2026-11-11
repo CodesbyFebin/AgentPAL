@@ -62,7 +62,7 @@ function approvalThreshold(mandate: Mandate): number {
 }
 
 /**
- * Deterministic MeshPaL policy. Decision order:
+ * Deterministic AgentPaL Guard policy. Decision order:
  * 1. kill switch / revoked / expired / merchant not allowed / category not allowed / amount<=0 / injection => DENY
  * 2. currency mismatch / recurring without permission / amount > per-tx (or approval) limit => REQUIRE_APPROVAL
  * 3. mandateSpend+amount > totalLimit => DENY

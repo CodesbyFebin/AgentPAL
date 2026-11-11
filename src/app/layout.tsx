@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MoneyMate Mesh — Your AI. Your Money. Your Rules.",
+  title: "AgentPaL — Your AI. Your Money. Your Rules.",
   description:
-    "MoneyMate Mesh is an AI financial agent plus a MeshPaL trust layer: deterministic affordability, signed mandates, policy checks, sandbox authorize-then-capture, and a hash-chained audit log. Not a PayPal or Braintree product.",
+    "AgentPaL is an AI financial agent plus an AgentPaL Guard trust layer: deterministic affordability, signed mandates, policy checks, sandbox authorize-then-capture, and a hash-chained audit log. Not a PayPal or Braintree product.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

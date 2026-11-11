@@ -110,8 +110,8 @@ export function AppShell({
         <div className="flex items-center gap-3 px-5 py-5">
           <LogoMark />
           <div>
-            <p className="text-sm font-semibold leading-tight">MoneyMate Mesh</p>
-            <p className="text-[11px] text-[var(--mm-sidebar-muted)]">AI-Powered Finance with PayPal</p>
+            <p className="text-sm font-semibold leading-tight">AgentPaL</p>
+            <p className="text-[11px] text-[var(--mm-sidebar-muted)]">Your AI. Your Money. Your Rules.</p>
           </div>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
@@ -141,7 +141,7 @@ export function AppShell({
             className="rounded-2xl p-3"
             style={{ background: "linear-gradient(135deg,var(--mm-accent),var(--mm-accent-2))" }}
           >
-            <p className="text-xs font-medium text-white/80">MeshPaL Agents</p>
+            <p className="text-xs font-medium text-white/80">AgentPaL Agents</p>
             <p className="text-sm font-semibold">Your AI Finance Crew</p>
             <button type="button" className="mt-2 text-xs text-white/90 underline" onClick={() => setPage("agents")}>
               Manage Agents →
@@ -164,6 +164,10 @@ export function AppShell({
           <button type="button" className="mm-focus rounded-lg p-2 md:hidden" aria-label="Open menu" onClick={() => setMobileNav(true)}>
             <Menu size={18} />
           </button>
+          <div className="flex items-center gap-2 md:hidden">
+            <LogoMark size={28} />
+            <span className="text-sm font-semibold leading-tight">AgentPaL</span>
+          </div>
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
@@ -200,7 +204,7 @@ export function AppShell({
         {busy && <div className="mb-3 text-sm" style={{ color: "var(--mm-accent)" }}>{busy}</div>}
         {children}
         <footer className="mt-8 flex flex-col gap-2 border-t border-[var(--mm-border)] pt-4 text-[11px] text-[var(--mm-muted)] md:flex-row md:items-center md:justify-between">
-          <p className="flex items-center gap-1.5"><Shield size={12} /> Seeded demo data is protected in this session only. Not a PayPal or Braintree product.</p>
+          <p className="flex items-center gap-1.5 max-w-3xl"><Shield size={12} /> AgentPaL is an independent hackathon project built on PayPal APIs. It is not a PayPal product and is not endorsed by PayPal. Seeded demo data is protected in this session only.</p>
           <p>Your AI. Your Money. Your Rules.</p>
         </footer>
       </main>
@@ -226,7 +230,7 @@ export function AppShell({
         <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={() => setMobileNav(false)}>
           <div className="mm-sidebar h-full w-[260px] p-3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between px-2 text-[var(--mm-sidebar-text)]">
-              <span className="font-semibold">Menu</span>
+              <span className="flex items-center gap-2 font-semibold"><LogoMark size={24} /> AgentPaL</span>
               <button type="button" aria-label="Close menu" onClick={() => setMobileNav(false)}><X size={18} /></button>
             </div>
             {PAGES.map((p) => (

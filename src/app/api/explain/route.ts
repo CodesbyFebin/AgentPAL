@@ -45,7 +45,7 @@ function explainEvent(message: string, type: string, payload: Record<string, unk
     const details = failed.length
       ? failed.map((c) => c.detail).join(" ")
       : String(payload.reason ?? message);
-    return `${header} ${details} MoneyMate Mesh decided this with deterministic MeshPaL policy checks, not model judgment. Merchant listing text is treated as data, never as instructions.`;
+    return `${header} ${details} AgentPaL decided this with deterministic AgentPaL Guard policy checks, not model judgment. Merchant listing text is treated as data, never as instructions.`;
   }
   return message;
 }

@@ -227,6 +227,54 @@ export function Donut({
   );
 }
 
+function monotonePath(pts: { x: number; y: number }[]): string {
+  const n = pts.length;
+  if (n === 0) return "";
+  if (n === 1) return `M ${pts[0].x} ${pts[0].y}`;
+  if (n === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+
+  const dx: number[] = [];
+  const m: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = pts[i + 1].x - pts[i].x;
+    const dy = pts[i + 1].y - pts[i].y;
+    m[i] = dx[i] === 0 ? 0 : dy / dx[i];
+  }
+  const t: number[] = [m[0]];
+  for (let i = 1; i < n - 1; i++) {
+    t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  }
+  t[n - 1] = m[n - 2];
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) {
+      t[i] = 0;
+      t[i + 1] = 0;
+      continue;
+    }
+    const a = t[i] / m[i];
+    const b = t[i + 1] / m[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const tau = 3 / Math.sqrt(s);
+      t[i] = tau * a * m[i];
+      t[i + 1] = tau * b * m[i];
+    }
+  }
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < n - 1; i++) {
+    const x0 = pts[i].x;
+    const y0 = pts[i].y;
+    const x1 = pts[i + 1].x;
+    const y1 = pts[i + 1].y;
+    const cpx1 = x0 + dx[i] / 3;
+    const cpy1 = y0 + (t[i] * dx[i]) / 3;
+    const cpx2 = x1 - dx[i] / 3;
+    const cpy2 = y1 - (t[i + 1] * dx[i]) / 3;
+    d += ` C ${cpx1} ${cpy1}, ${cpx2} ${cpy2}, ${x1} ${y1}`;
+  }
+  return d;
+}
+
 export function LineChart({
   series,
   height = 180,
@@ -239,15 +287,11 @@ export function LineChart({
   const pad = 28;
   const all = series.flatMap((s) => s.points);
   const max = Math.max(1, ...all);
-  const n = Math.max(1, ...series.map((s) => s.points.length - 1), 1);
-  const xy = (pts: number[]) =>
-    pts
-      .map((v, i) => {
-        const x = pad + (i / Math.max(1, pts.length - 1, n)) * (w - pad * 2);
-        const y = h - pad - (v / max) * (h - pad * 2);
-        return `${x},${y}`;
-      })
-      .join(" ");
+  const toPts = (values: number[]) =>
+    values.map((v, i) => ({
+      x: pad + (i / Math.max(1, values.length - 1)) * (w - pad * 2),
+      y: h - pad - (v / max) * (h - pad * 2),
+    }));
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="h-auto w-full" role="img" aria-label="Spending overview chart">
       {[0, 0.5, 1].map((t) => {
@@ -255,7 +299,7 @@ export function LineChart({
         return <line key={t} x1={pad} x2={w - pad} y1={y} y2={y} stroke="var(--mm-border)" strokeDasharray="4 6" />;
       })}
       {series.map((s) => (
-        <polyline key={s.name} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" points={xy(s.points)} />
+        <path key={s.name} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" d={monotonePath(toPts(s.points))} />
       ))}
     </svg>
   );
@@ -281,20 +325,24 @@ export function LogoMark({ size = 36 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
       <defs>
-        <linearGradient id="logoGrad" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="agentpalLogoGrad" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="var(--mm-accent)" />
           <stop offset="100%" stopColor="var(--mm-accent-2)" />
         </linearGradient>
       </defs>
-      <rect width="40" height="40" rx="12" fill="url(#logoGrad)" />
-      <path d="M10 28V12h4.2l5.8 11.4L25.8 12H30v16h-3.3V18.2L21.6 28h-3.2l-5.1-9.8V28H10z" fill="white" />
+      <rect width="40" height="40" rx="12" fill="url(#agentpalLogoGrad)" />
+      <path
+        fill="white"
+        fillRule="evenodd"
+        d="M20 8.5 L33 31.5 H28.1 L25.55 26.2 H14.45 L11.9 31.5 H7 L20 8.5zm0 6.9 L16.15 23.4 h7.7 L20 15.4z"
+      />
     </svg>
   );
 }
 
 export function RobotMascot({ className = "" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 160 160" className={className} role="img" aria-label="MeshPaL assistant mascot">
+    <svg viewBox="0 0 160 160" className={className} role="img" aria-label="AgentPaL assistant mascot">
       <defs>
         <linearGradient id="botBody" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#ffffff" />

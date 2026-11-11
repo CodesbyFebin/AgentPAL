@@ -39,7 +39,7 @@ const base = {
   now,
 };
 
-describe("MeshPaL policy engine — decision order", () => {
+describe("AgentPaL Guard policy engine — decision order", () => {
   it("ALLOWs an $8 allowlisted API credit purchase under the per-tx limit", () => {
     const d = evaluatePolicy({ ...base, mandate: mandate(), merchant: api, amount: 8, category: "api_credits", currency: "USD" });
     expect(d.decision).toBe("ALLOW");

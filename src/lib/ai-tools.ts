@@ -72,7 +72,7 @@ export const COACH_TOOLS = [
     type: "function" as const,
     function: {
       name: "propose_payment",
-      description: "Create a payment intent for the MeshPaL policy engine. Never captures or sends money. A human still has to approve if policy requires it.",
+      description: "Create a payment intent for the AgentPaL Guard policy engine. Never captures or sends money. A human still has to approve if policy requires it.",
       parameters: {
         type: "object",
         properties: {
@@ -192,7 +192,7 @@ function dispatch(store: StoreData, name: string, args: Record<string, unknown>)
           bill_type: s.bill_type,
           raised_this_year: (s.price_history || []).filter((c) => c.next > c.previous && c.effective_at.startsWith("2026")).length,
         })),
-        scope: "Only subscriptions created through MoneyMate Mesh are listed.",
+        scope: "Only subscriptions created through AgentPaL are listed.",
       };
     case "get_goals":
       return fin.savings_goals;

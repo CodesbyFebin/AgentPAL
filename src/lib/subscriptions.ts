@@ -116,7 +116,7 @@ export function seedDemoSubscriptions(store: StoreData, mandate?: Mandate): Mana
   appendEvent(
     store,
     "subscriptions.seeded",
-    "Seeded three demo software subscriptions created through the MoneyMate Mesh merchant integration (CloudDraw $12, Logsense $10, StackMail $8). Only these are managed — we do not intercept every renewal on a consumer PayPal account.",
+    "Seeded three demo software subscriptions created through the AgentPaL merchant integration (CloudDraw $12, Logsense $10, StackMail $8). Only these are managed — we do not intercept every renewal on a consumer PayPal account.",
     { subscription_ids: created.map((s) => s.subscription_id), monthly_total: 30 },
   );
   return created;

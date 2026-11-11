@@ -454,7 +454,7 @@ export interface ManagedSubscription {
   price_history: PriceChange[];
   paypal_subscription_id?: string;
   mandate_id?: string;
-  /** Honest scope: only subscriptions created through MoneyMate Mesh are managed. */
+  /** Honest scope: only subscriptions created through AgentPaL are managed. */
   created_via: "moneymate_mesh";
   next_billing_at: string;
   last_renewal_amount?: number;
