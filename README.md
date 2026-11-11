@@ -46,7 +46,7 @@ flowchart TD
   Rev -->|unauthorized| Can[PayPal Subscriptions cancel]
 ```
 
-Storage is a single JSON file (`data/moneymate.json`). That is a deliberate hackathon simplification — no Postgres, no Redis, no Docker. Render's filesystem is ephemeral: if `data/` is empty on boot the store seeds itself automatically, and the **Reset demo** button (or `POST /api/demo/reset`) reseeds it. Anything written to disk is lost when the instance cycles.
+Storage is a single JSON file (`data/moneymate.json`). That is a deliberate hackathon simplification and requires no database service. Render's filesystem is ephemeral: if `data/` is empty on boot the store seeds itself automatically, and the **Reset demo** button (or `POST /api/demo/reset`) reseeds it. Anything written to disk is lost when the instance cycles.
 
 ## Demo scenarios
 
@@ -154,13 +154,13 @@ Signed receipts (and the payment cards) show a settlement timeline: **authorized
 
 ## Setup
 
-Prerequisites: Node.js 20+ and npm.
+Prerequisites: Node.js 22.12+ or Node.js 20.19+, and npm. Use `nvm use` to match CI.
 
 ```bash
-git clone <your-repo-url> moneymate-mesh
+git clone https://github.com/CodesbyFebin/AgentPAL.git moneymate-mesh
 cd moneymate-mesh
 cp .env.example .env.local
-npm install
+npm ci
 npm test
 npm run dev
 ```
@@ -185,6 +185,15 @@ Open [http://localhost:3000](http://localhost:3000).
 | `AI_API_KEY` | For the live coach | Bearer token for an OpenAI-compatible API |
 | `AI_BASE_URL` | No (default `https://api.openai.com/v1`) | Must expose `/chat/completions` |
 | `AI_MODEL` | No (default `gpt-4o-mini`) | Model name |
+
+### Run with Docker
+
+Run `docker compose up --build` and open [http://localhost:3000](http://localhost:3000).
+Compose keeps the JSON store in the `agentpal-data` volume. It runs with mock payments
+and the offline coach by default. To supply sandbox credentials, uncomment the
+`env_file` lines in `docker-compose.yml` and use a local `.env.local` based on `.env.example`.
+
+Run `node examples/basic.mjs` against the running app to check its API health and modes.
 
 ### Deploy on Render
 
@@ -239,6 +248,12 @@ Work took place **10–12 November 2026** for the PayPal AI Hackathon. Next.js i
 - Live x402 / USDC settlement
 - zkVM receipts
 - An agent marketplace
+
+## Contributing and security
+
+See [Contributing](CONTRIBUTING.md) for development checks, the [Code of Conduct](CODE_OF_CONDUCT.md)
+for participation standards, [Security](SECURITY.md) for private reporting, and the
+[Changelog](CHANGELOG.md) for recent changes.
 
 ## License
 

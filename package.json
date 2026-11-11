@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "AgentPaL \u2014 Your AI. Your Money. Your Rules. An AI financial agent with an AgentPaL Guard trust and execution layer, built for the PayPal AI Hackathon.",
+  "description": "AgentPaL — Your AI. Your Money. Your Rules. An AI financial agent with an AgentPaL Guard trust and execution layer, built for the PayPal AI Hackathon.",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@paypal/agent-toolkit": "^1.11.0",
@@ -33,6 +34,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "18.3.18",
     "@types/react-dom": "18.3.5",
+    "@vitest/coverage-v8": "4.1.12",
     "autoprefixer": "10.4.21",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.29",
@@ -50,5 +52,30 @@
     "@typescript-eslint/typescript-estree": {
       "minimatch": "11.0.8"
     }
+  },
+  "keywords": [
+    "agentpal",
+    "personal-finance",
+    "ai-agent",
+    "agentic-payments",
+    "paypal",
+    "braintree",
+    "typescript",
+    "react",
+    "next.js",
+    "tailwind-css",
+    "open-source"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CodesbyFebin/AgentPAL.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CodesbyFebin/AgentPAL/issues"
+  },
+  "homepage": "https://github.com/CodesbyFebin/AgentPAL#readme",
+  "author": "CodesbyFebin",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
   }
 }
